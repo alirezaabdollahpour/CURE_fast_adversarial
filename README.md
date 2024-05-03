@@ -1,6 +1,6 @@
 # Robustness via curvature regularization, and vice versa(CURE) with fast adversarial training
 
-This is the latest version of the PyTorch implementation of this paper [here](https://arxiv.org/abs/1811.09716).
+This is the latest version of the PyTorch implementation of this paper [CURE](https://arxiv.org/abs/1811.09716) and [Fast Adversarial training with FGSM](https://arxiv.org/abs/2001.03994).
 
 <!-- ## Getting Started
 
@@ -24,5 +24,5 @@ cd yourprojectname
 # Install dependencies
 pip install -r requirements.txt
 
-``` --> -->
+``` --> 
 
