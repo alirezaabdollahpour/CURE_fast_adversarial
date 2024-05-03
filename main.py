@@ -27,12 +27,13 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=64, type=int)
     parser.add_argument('--h', default=1.5, type=float, help='hyperparameter for CURE regulizer')
-    parser.add_argument('--lambda_', default=5.0, type=float, help='weight for CURE regulizer')
+    parser.add_argument('--lambda_', default=0.5, type=float, help='weight for CURE regulizer')
+    parser.add_argument('--betta', default=1.0, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
-    parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--epochs', default=300, type=int)
     parser.add_argument('--lr-schedule', default='cyclic', choices=['cyclic', 'multistep'])
     parser.add_argument('--lr-min', default=0.0, type=float)
-    parser.add_argument('--lr-max', default=1.0, type=float)
+    parser.add_argument('--lr-max', default=0.2, type=float)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
     parser.add_argument('--epsilon', default=8, type=int)
@@ -57,18 +58,6 @@ def main():
     state = {k: v for k, v in args._get_kwargs()}
     print(state)
 
-    # if not os.path.exists(args.out_dir):
-    #     os.mkdir(args.out_dir)
-    # logfile = os.path.join(args.out_dir, 'output.log')
-    # if os.path.exists(logfile):
-    #     os.remove(logfile)
-
-    # logging.basicConfig(
-    #     format='[%(asctime)s] - %(message)s',
-    #     datefmt='%Y/%m/%d %H:%M:%S',
-    #     level=logging.INFO,
-    #     filename=os.path.join(args.out_dir, 'output.log'))
-    # logger.info(args)
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -88,12 +77,8 @@ def main():
     # Necessary for FP16
     scaler = torch.cuda.amp.GradScaler()
     amp_args = dict(opt_level=args.opt_level, loss_scale=args.loss_scale, verbosity=True)
-    ################## amp #############
-    # if args.opt_level == 'O2':
-    #     amp_args['master_weights'] = args.master_weights
-    # model, opt = amp.initialize(model, opt, **amp_args)
-    ####################################
     criterion = nn.CrossEntropyLoss()
+    criterion_kl = nn.KLDivLoss(reduction='sum')
     cure = CURE(model, opt=opt)
 
     if args.delta_init == 'previous':
@@ -109,7 +94,6 @@ def main():
     # Training
     prev_robust_acc = 0.
     start_train_time = time.time()
-    # logger.info('Epoch \t Seconds \t LR \t \t Train Loss \t Train Acc')
     for epoch in range(args.epochs):
         print("Start training")
         start_epoch_time = time.time()
@@ -131,32 +115,32 @@ def main():
             with torch.cuda.amp.autocast():
                 output = model(X + delta[:X.size(0)])
                 loss = F.cross_entropy(output, y)
-            ########### amp ################################
-            # with amp.scale_loss(loss, opt) as scaled_loss:
-                # scaled_loss.backward()
-            ################################################
+
             scaler.scale(loss).backward()
-            # scaler.update()
+
             grad = delta.grad.detach()
             delta.data = clamp(delta + alpha * torch.sign(grad), -epsilon, epsilon) # FGSM
             delta.data[:X.size(0)] = clamp(delta[:X.size(0)], lower_limit - X, upper_limit - X)
             delta = delta.detach()
+            
+            # Forward pass with amp
             with torch.cuda.amp.autocast():
                 output = model(X + delta[:X.size(0)]) # gradient for theta to train with SGD or Adam
                 loss = criterion(output, y)
+                loss_robust = criterion_kl(F.log_softmax(output, dim=1),F.softmax(model(X), dim=1))     
+                
             ########### CURE ########################################
-            regularizer, grad_norm = cure.regularizer(X+ delta[:X.size(0)], y, h=args.h) # curvature reg for adversarial sample : X + delta[:X.size(0)]
+            regularizer, grad_norm = cure.regularizer(X, y, h=args.h)
             curvature += regularizer.item()
-            loss = loss + args.lambda_*regularizer
+            # Total loss : loss + TRADE_loss + CURE_regulizer
+            loss = loss + (1/args.batch_size)*(args.lambda_)*regularizer + (1.0 / args.batch_size)*args.betta*loss_robust
+            # loss = loss + args.betta*loss_robust
             opt.zero_grad()
-            ############## amp ##################################
-            # with amp.scale_loss(loss, opt) as scaled_loss:
-                # scaled_loss.backward()
-            ########################################################
+            
             scaler.scale(loss).backward()
             scaler.step(opt)
             scaler.update()
-            # opt.step()
+
             train_loss += loss.item() * y.size(0)
             train_acc += (output.max(1)[1] == y).sum().item()
             train_n += y.size(0)
@@ -186,14 +170,12 @@ def main():
         ###########################################################################
 
         lr = scheduler.get_lr()[0]
-        # logger.info('%d \t %.1f \t \t %.4f \t %.4f \t %.4f',
-        #     epoch, epoch_time - start_epoch_time, lr, train_loss/train_n, train_acc/train_n)
+
 
     train_time = time.time()
     if not args.early_stop:
         best_state_dict = model.state_dict()
     torch.save(best_state_dict, os.path.join(args.out_dir, 'model.pth'))
-    # logger.info('Total train time: %.4f minutes', (train_time - start_train_time)/60)
 
     # Evaluation
     model_test = PreActResNet18().cuda()
@@ -204,8 +186,7 @@ def main():
     pgd_loss, pgd_acc = evaluate_pgd(test_loader, model_test, 20, 10)
     test_loss, test_acc = evaluate_standard(test_loader, model_test)
 
-    logger.info('Test Loss \t Test Acc \t PGD Loss \t PGD Acc')
-    logger.info('%.4f \t \t %.4f \t %.4f \t %.4f', test_loss, test_acc, pgd_loss, pgd_acc)
+
 
 
 if __name__ == "__main__":

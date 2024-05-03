@@ -42,12 +42,14 @@ class CURE():
         '''
         z, norm_grad = self._find_z(inputs, targets, h)
 
-        inputs.requires_grad_()
-        outputs_pos = self.net.eval()(inputs + z)
-        outputs_orig = self.net.eval()(inputs)
+        inputs.requires_grad_(True)
+        with torch.cuda.amp.autocast():
+            outputs_pos = self.net.eval()(inputs + z)
+            outputs_orig = self.net.eval()(inputs)
 
-        loss_pos = self.criterion(outputs_pos, targets)
-        loss_orig = self.criterion(outputs_orig, targets)
+            loss_pos = self.criterion(outputs_pos, targets)
+            loss_orig = self.criterion(outputs_orig, targets)
+            
         grad_diff = torch.autograd.grad((loss_pos-loss_orig), inputs, only_inputs=True)[0]
 
         reg = grad_diff.reshape(grad_diff.size(0), -1).norm(dim=1)
