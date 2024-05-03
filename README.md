@@ -1,8 +1,8 @@
 # Robustness via curvature regularization, and vice versa(CURE) with fast adversarial training
 
-<!-- One paragraph of project description goes here. Explain what makes your project stand out.
+This is the latest version of the PyTorch implementation of this paper [here](https://arxiv.org/abs/1811.09716).
 
-## Getting Started
+<!-- ## Getting Started
 
 These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. 
 
@@ -24,5 +24,5 @@ cd yourprojectname
 # Install dependencies
 pip install -r requirements.txt
 
-``` -->
+``` --> -->
 
