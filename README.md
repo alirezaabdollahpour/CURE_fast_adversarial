@@ -1,4 +1,4 @@
-# Robustness via curvature regularization, and vice versaProject Title(CURE) with fast adversarial training
+# Robustness via curvature regularization, and vice versa(CURE) with fast adversarial training
 
 <!-- One paragraph of project description goes here. Explain what makes your project stand out.
 
