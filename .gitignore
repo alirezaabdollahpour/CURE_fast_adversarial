@@ -3,3 +3,4 @@ cifar-data/
 __pycache__/
 *.ipynb
 test.py
+*.xlsx
