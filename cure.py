@@ -51,7 +51,7 @@ class CURE():
         grad_diff = torch.autograd.grad((loss_pos-loss_orig), inputs, only_inputs=True)[0]
 
         reg = grad_diff.reshape(grad_diff.size(0), -1).norm(dim=1)
-        # reg = (1./h**2)*(reg**2)
+        reg = (1./h**2)*(reg**2)
         self.net.zero_grad()
 
         return torch.sum(reg), norm_grad
