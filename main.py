@@ -25,10 +25,10 @@ logger = logging.getLogger(__name__)
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch-size', default=64, type=int)
-    parser.add_argument('--h', default=1.5, type=float, help='hyperparameter for CURE regulizer')
-    parser.add_argument('--lambda_', default=0.5, type=float, help='weight for CURE regulizer')
-    parser.add_argument('--betta', default=1.0, type=float, help='weight for TRADE loss')
+    parser.add_argument('--batch-size', default=256, type=int)
+    parser.add_argument('--h', default=1.0, type=float, help='hyperparameter for CURE regulizer')
+    parser.add_argument('--lambda_', default=1.0, type=float, help='weight for CURE regulizer')
+    parser.add_argument('--betta', default=2.5, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
     parser.add_argument('--epochs', default=300, type=int)
     parser.add_argument('--lr-schedule', default='cyclic', choices=['cyclic', 'multistep'])
@@ -38,6 +38,7 @@ def get_args():
     parser.add_argument('--momentum', default=0.9, type=float)
     parser.add_argument('--epsilon', default=8, type=int)
     parser.add_argument('--alpha', default=10, type=float, help='Step size')
+    parser.add_argument('--delta', default=True, type=str, help='passing to CURE for FGSM direction rather thatn z')
     parser.add_argument('--delta-init', default='random', choices=['zero', 'random', 'previous'],
         help='Perturbation initialization method')
     parser.add_argument('--out-dir', default='train_fgsm_output', type=str, help='Output directory')
@@ -73,6 +74,7 @@ def main():
     model.train()
 
     opt = torch.optim.SGD(model.parameters(), lr=args.lr_max, momentum=args.momentum, weight_decay=args.weight_decay)
+    # opt = torch.optim.Adam(model.parameters(), lr=args.lr_max, weight_decay=args.weight_decay)
 
     # Necessary for FP16
     scaler = torch.cuda.amp.GradScaler()
@@ -91,6 +93,7 @@ def main():
     elif args.lr_schedule == 'multistep':
         scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps / 2, lr_steps * 3 / 4], gamma=0.1)
 
+    regularizer_epochs = range(10, int(((args.epochs)/2))+1, 10)
     # Training
     prev_robust_acc = 0.
     start_train_time = time.time()
@@ -125,16 +128,28 @@ def main():
             
             # Forward pass with amp
             with torch.cuda.amp.autocast():
-                output = model(X + delta[:X.size(0)]) # gradient for theta to train with SGD or Adam
+                output = model(X +delta[:X.size(0)]) # gradient for theta to train with SGD or Adam
                 loss = criterion(output, y)
                 loss_robust = criterion_kl(F.log_softmax(output, dim=1),F.softmax(model(X), dim=1))     
                 
             ########### CURE ########################################
-            regularizer, grad_norm = cure.regularizer(X, y, h=args.h)
-            curvature += regularizer.item()
-            # Total loss : loss + TRADE_loss + CURE_regulizer
-            loss = loss + (1/args.batch_size)*(args.lambda_)*regularizer + (1.0 / args.batch_size)*args.betta*loss_robust
-            # loss = loss + args.betta*loss_robust
+            if epoch in regularizer_epochs:
+                # Total loss : loss + TRADE_loss + CURE_regulizer
+
+                if args.delta:
+                    regularizer = cure.regularizer(X, y, delta=delta, h=args.h)
+                    curvature += regularizer.item()
+                    # Total loss : loss + TRADE_loss + CURE_regulizer
+                    loss = loss + (1.0 / args.batch_size)*(args.lambda_)*regularizer + (1.0 / args.batch_size)*args.betta*loss_robust
+                else:
+                    regularizer = cure.regularizer(X, y, delta=None, h=args.h)
+                    curvature += regularizer.item()
+                    
+                    loss = loss + (1.0 / args.batch_size)*(args.lambda_)*regularizer + (1.0 / args.batch_size)*args.betta*loss_robust
+                    
+            else:
+                loss = loss + (1.0 / args.batch_size)*args.betta*loss_robust
+
             opt.zero_grad()
             
             scaler.scale(loss).backward()

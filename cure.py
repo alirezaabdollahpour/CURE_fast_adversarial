@@ -18,9 +18,7 @@ class CURE():
         inputs.requires_grad_(True)
         outputs = self.net.eval()(inputs)
         loss_z = self.criterion(self.net.eval()(inputs), targets)
-        # with amp.scale_loss(loss_z, self.opt) as scaled_loss:
-        #     # loss_z.backward()
-        #     scaled_loss.backward()
+        
         with torch.cuda.amp.autocast():
             self.scaler.scale(loss_z).backward()
             
@@ -35,29 +33,47 @@ class CURE():
         return z, norm_grad
 
 
-    def regularizer(self, inputs, targets, h):
+    def regularizer(self, inputs, targets, delta, h):
 
         '''
         Regularizer term in CURE
         '''
-        z, norm_grad = self._find_z(inputs, targets, h)
+        if delta is None:
+            z, norm_grad = self._find_z(inputs, targets, h)
+            inputs.requires_grad_(True)
+            with torch.cuda.amp.autocast():
+                outputs_pos = self.net.eval()(inputs + z)
+                outputs_orig = self.net.eval()(inputs)
 
-        inputs.requires_grad_(True)
-        with torch.cuda.amp.autocast():
-            outputs_pos = self.net.eval()(inputs + z)
-            outputs_orig = self.net.eval()(inputs)
+                loss_pos = self.criterion(outputs_pos, targets)
+                loss_orig = self.criterion(outputs_orig, targets)
+                
+            grad_diff = torch.autograd.grad((loss_pos-loss_orig), inputs, only_inputs=True)[0]
 
-            loss_pos = self.criterion(outputs_pos, targets)
-            loss_orig = self.criterion(outputs_orig, targets)
-            
-        grad_diff = torch.autograd.grad((loss_pos-loss_orig), inputs, only_inputs=True)[0]
+            reg = grad_diff.reshape(grad_diff.size(0), -1).norm(dim=1)
+            # reg = (1./h**2)*(reg**2)
+            reg = (reg**2)
+            self.net.zero_grad()
 
-        reg = grad_diff.reshape(grad_diff.size(0), -1).norm(dim=1)
-        # reg = (1./h**2)*(reg**2)
-        reg = (reg**2)
-        self.net.zero_grad()
+            return torch.sum(reg), norm_grad
+        else:
+            # This part is good for AT with FGSM such that instead buliding z, you can use direction of FGSM in training with passing delta!
+            inputs.requires_grad_(True)
+            delta.requires_grad_(True)
+            with torch.cuda.amp.autocast():
+                outputs_pos = self.net.eval()(inputs + delta[:inputs.size(0)])
+                outputs_orig = self.net.eval()(inputs)
 
-        # return torch.sum(reg), norm_grad
-        return torch.sum(reg) / float(inputs.size(0)), norm_grad
+                loss_pos = self.criterion(outputs_pos, targets)
+                loss_orig = self.criterion(outputs_orig, targets)
+                
+            grad_diff = torch.autograd.grad((loss_pos-loss_orig), inputs, only_inputs=True)[0]
+
+            reg = grad_diff.reshape(grad_diff.size(0), -1).norm(dim=1)
+            # reg = (1./h**2)*(reg**2)
+            reg = (reg**2)
+            self.net.zero_grad()
+
+            return torch.sum(reg) / float(inputs.size(0))
 
 

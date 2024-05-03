@@ -8,6 +8,8 @@ from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 
+# from autoattack import AutoAttack
+
 
 
 
@@ -221,3 +223,35 @@ def evaluate_standard(test_loader, model):
             test_acc += (output.max(1)[1] == y).sum().item()
             n += y.size(0)
     return test_loss/n, test_acc/n
+
+
+
+
+
+def evaluate_robust_accuracy_AA_APGD(model, data_loader, device, epsilon=8/255):
+    # Put the model in evaluation mode
+    model.eval()
+
+    adversary = AutoAttack(model, norm='Linf', eps=epsilon, version='custom', attacks_to_run=['apgd-ce'])
+    adversary.apgd.n_restarts = 1
+
+    robust_accuracy = 0.0
+    total = 0
+
+    for inputs, labels in data_loader:
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        # Run the attack
+        inputs_adv = adversary.run_standard_evaluation(inputs, labels, bs=inputs.size(0))
+
+        # Evaluate on adversarial examples
+        with torch.no_grad():
+            outputs = model(inputs_adv)
+            _, predicted = torch.max(outputs, 1)
+            robust_accuracy += (predicted == labels).sum().item()
+        total += labels.size(0)
+
+    # Calculate final robust accuracy
+    robust_accuracy = robust_accuracy / total
+    print(f'Robust accuracy under attack: {robust_accuracy * 100:.2f}%')
+    return robust_accuracy
