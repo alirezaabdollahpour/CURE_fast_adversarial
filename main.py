@@ -129,13 +129,14 @@ def main():
     # Training
     prev_robust_acc = 0.
     start_train_time = time.time()
-    accuracy_df = pd.DataFrame(columns=['epoch','loss_train','ACC_train','ACC_test'])
+    accuracy_df = pd.DataFrame(columns=['epoch','loss_train','ACC_train','ACC_Clean_train','ACC_test'])
     for epoch in range(args.epochs):
         print("Start training")
         start_epoch_time = time.time()
         train_loss = 0
         test_loss  = 0
         train_acc = 0
+        train_acc_clean = 0 
         test_acc = 0
         train_n = 0
         curvature = 0.0
@@ -198,6 +199,7 @@ def main():
 
             train_loss += loss.item() * y.size(0)
             train_acc += (output.max(1)[1] == y).sum().item()
+            train_acc_clean += (logit_clean.max(1)[1] == y).sum().item()
             train_n += y.size(0)
             # scheduler.step()
         if args.early_stop:
@@ -207,9 +209,9 @@ def main():
             with torch.no_grad():
                 output = model(clamp(X + pgd_delta[:X.size(0)], lower_limit, upper_limit))
             robust_acc = (output.max(1)[1] == y).sum().item() / y.size(0)
-            print("="*40)
+            print("="*60)
             print(f'Robust Accurcy for epoch:{epoch} is :{robust_acc*100}%')
-            print("="*40)
+            print("="*60)
             if robust_acc - prev_robust_acc < -0.2:
                 break
             prev_robust_acc = robust_acc
@@ -218,13 +220,15 @@ def main():
         epoch_time = time.time()
         ############## Print Information ##########################################
         print(f'curvature for epoch:{epoch} is :{curvature}')
-        print("="*40)
+        print("="*60)
         print(f'Train Accuracy for epoch:{epoch} is :{(train_acc/train_n)*100}%')
-        print("="*40)
+        print("="*60)
+        print(f'Train Accuracy on clean samples for epoch:{epoch} is :{(train_acc_clean/train_n)*100}%')
+        print("="*60)
         epoch_time = time.time()
         print('Total epoch time: %.4f minutes', (epoch_time - start_epoch_time)/60)
         ###########################################################################
-        accuracy_df = accuracy_df._append({'epoch': epoch, 'loss_train': train_loss ,'ACC_train':train_acc,'ACC_test':test_acc}, ignore_index=True)
+        accuracy_df = accuracy_df._append({'epoch': epoch, 'loss_train': train_loss ,'ACC_train':train_acc,'ACC_Clean_train':train_acc_clean,'ACC_test':test_acc}, ignore_index=True)
 
         # lr = scheduler.get_lr()[0]
 
@@ -248,13 +252,13 @@ def main():
     test_subset = Subset(test_dataset, indices)
     testloader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
     pgd_loss, pgd_acc = evaluate_pgd(testloader, model_test, 20, 1) # zero-restarts
-    print('='*50)
+    print('='*60)
     print(f'pgd_loss is :{pgd_loss} and pgd_acc(robust acc) is :{pgd_acc*100}')
-    print('='*50)
+    print('='*60)
     ACC_AA_PGD = evaluate_robust_accuracy_AA_APGD(model_test, testloader, 'cuda', epsilon=8/255)
     test_loss, test_acc = evaluate_standard(testloader, model_test)
     print(f'Robust accuray for AA-PGD is :{ACC_AA_PGD}')
-    print('='*50)
+    print('='*60)
     print(f'test_loss is :{test_loss} and clean_acc is:{test_acc*100}')
 
 
