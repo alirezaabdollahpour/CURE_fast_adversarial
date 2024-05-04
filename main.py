@@ -28,15 +28,15 @@ logger = logging.getLogger(__name__)
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=256, type=int)
-    parser.add_argument('--h', default=1.0, type=float, help='hyperparameter for CURE regulizer')
+    parser.add_argument('--h', default=3.0, type=float, help='hyperparameter for CURE regulizer')
     parser.add_argument('--lambda_', default=10.0, type=float, help='weight for CURE regulizer')
     parser.add_argument('--betta', default=5.0, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
-    parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--epochs', default=100, type=int)
     # parser.add_argument('--lr-schedule', default='multistep', choices=['cyclic', 'multistep'])
     parser.add_argument('--lr-min', default=1e-6, type=float)
     parser.add_argument('--lr-max', default=0.1, type=float)
-    parser.add_argument('--lr-schedule', default='piecewise', choices=['superconverge', 'piecewise', 'linear', 'piecewisesmoothed', 'piecewisezoom', 'onedrop', 'multipledecay', 'cosine'])
+    parser.add_argument('--lr-schedule', default='linear', choices=['superconverge', 'piecewise', 'linear', 'piecewisesmoothed', 'piecewisezoom', 'onedrop', 'multipledecay', 'cosine'])
     parser.add_argument('--lr-one-drop', default=0.01, type=float)
     parser.add_argument('--lr-drop-epoch', default=100, type=int)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
@@ -178,7 +178,7 @@ def main():
             ########### CURE + TRADE ########################################
             if epoch in regularizer_epochs:
                 ########### FMN_Linf for proper direction ##################
-                r_linf = fmn(model=model, inputs=X , labels=y, norm = float('inf'), steps=3) 
+                r_linf = fmn(model=model, inputs=X , labels=y, norm = float('inf'), steps=2) 
                 # Total loss : loss + TRADE_loss + CURE_regulizer
 
                 if args.delta:
@@ -231,7 +231,7 @@ def main():
         epoch_time = time.time()
         print('Total epoch time: %.4f minutes', (epoch_time - start_epoch_time)/60)
         ###########################################################################
-        accuracy_df = accuracy_df._append({'epoch': epoch, 'loss_train': train_loss ,'ACC_train':train_acc,'ACC_Clean_train':train_acc_clean,'ACC_test':test_acc}, ignore_index=True)
+        accuracy_df = accuracy_df._append({'epoch': epoch, 'loss_train': train_loss/train_n ,'ACC_train':(train_acc/train_n)*100,'ACC_Clean_train':(train_acc_clean/train_n)*100,'ACC_test':test_acc*100}, ignore_index=True)
 
         # lr = scheduler.get_lr()[0]
 
