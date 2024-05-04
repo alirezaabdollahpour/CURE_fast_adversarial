@@ -255,3 +255,5 @@ def evaluate_robust_accuracy_AA_APGD(model, data_loader, device, epsilon=8/255):
     robust_accuracy = robust_accuracy / total
     print(f'Robust accuracy under attack: {robust_accuracy * 100:.2f}%')
     return robust_accuracy
+
+

@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader, Subset
 from models import *
 from utils import *
 from cure import *
+from attacks.fmn import *
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -31,7 +32,7 @@ def get_args():
     parser.add_argument('--lambda_', default=10.0, type=float, help='weight for CURE regulizer')
     parser.add_argument('--betta', default=5.0, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
-    parser.add_argument('--epochs', default=200, type=int)
+    parser.add_argument('--epochs', default=50, type=int)
     # parser.add_argument('--lr-schedule', default='multistep', choices=['cyclic', 'multistep'])
     parser.add_argument('--lr-min', default=1e-6, type=float)
     parser.add_argument('--lr-max', default=0.1, type=float)
@@ -176,10 +177,12 @@ def main():
                 
             ########### CURE + TRADE ########################################
             if epoch in regularizer_epochs:
+                ########### FMN_Linf for proper direction ##################
+                r_linf = fmn(model=model, inputs=X , labels=y, norm = float('inf'), steps=3) 
                 # Total loss : loss + TRADE_loss + CURE_regulizer
 
                 if args.delta:
-                    regularizer = cure.regularizer(X, y, delta=delta, h=args.h)
+                    regularizer = cure.regularizer(X, y, delta=r_linf, h=args.h)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
                     loss = loss + (1/args.batch_size)*loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
@@ -190,7 +193,7 @@ def main():
                     loss = loss + (1/args.batch_size)*loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
                     
             else:
-                loss = loss + (1/args.batch_size)*loss_clean + (1/args.batch_size)*args.betta*loss_robust
+                loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust
 
             opt.zero_grad()           
             scaler.scale(loss).backward()
