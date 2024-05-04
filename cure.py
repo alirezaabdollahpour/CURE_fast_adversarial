@@ -57,7 +57,7 @@ class CURE():
 
             return torch.sum(reg), norm_grad
         else:
-            # This part is good for AT with FGSM such that instead buliding z, you can use direction of FGSM in training with passing delta!
+            # This part is good for AT with FGSM such that instead buliding z, you can use direction of FGSM or others proper direciotns in training by passing delta!
             inputs.requires_grad_(True)
             delta.requires_grad_(True)
             with torch.cuda.amp.autocast():
