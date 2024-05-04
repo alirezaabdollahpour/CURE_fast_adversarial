@@ -15,6 +15,8 @@ cost. Furthermore I show that FGSM adversarial training can be further accelerat
 us to learn a robust CIFAR10 classifier with 45% robust accuracy to PGD attacks
 with ϵ = 8/255 in 6 minutes, in comparison to past work based on “free” adversarial training which took 10 and 50 hours to reach the same respective thresholds.
 
+Previous implementations used Apex-NVIDIA to accelerate the training processes on GPU. However, as using "apex" nowadays is not straightforward and reasonable, I implement "Fast Adversarial training" with PyTorch-amp scalers.
+
 
 ### Prerequisites
 
