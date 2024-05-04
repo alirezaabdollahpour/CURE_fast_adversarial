@@ -246,7 +246,7 @@ def main():
     model_test.float()
     model_test.eval()
 
-    # Select 500 random indices from the test set
+    # Select 1024 random indices from the test set
     indices = torch.randperm(len(test_dataset))[:1024]
     # Create the subset
     test_subset = Subset(test_dataset, indices)
