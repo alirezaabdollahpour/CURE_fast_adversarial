@@ -185,12 +185,12 @@ def main():
                     regularizer = cure.regularizer(X, y, delta=r_linf, h=args.h)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
-                    loss = loss + (1/args.batch_size)*loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
+                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
                 else:
                     regularizer = cure.regularizer(X, y, delta=None, h=args.h)
                     curvature += regularizer.item()
                     
-                    loss = loss + (1/args.batch_size)*loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
+                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
                     
             else:
                 loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust
