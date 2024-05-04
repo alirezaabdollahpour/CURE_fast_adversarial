@@ -28,7 +28,7 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=256, type=int)
     parser.add_argument('--h', default=1.0, type=float, help='hyperparameter for CURE regulizer')
-    parser.add_argument('--lambda_', default=1.0, type=float, help='weight for CURE regulizer')
+    parser.add_argument('--lambda_', default=10.0, type=float, help='weight for CURE regulizer')
     parser.add_argument('--betta', default=5.0, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
     parser.add_argument('--epochs', default=200, type=int)
@@ -64,7 +64,7 @@ def main():
     state = {k: v for k, v in args._get_kwargs()}
     print(state)
 
-    results_csv = f'train_FGSM_h_{args.h}_betta_{args.betta}_lambda_{args.lambda_}_epochs_{args.epochs}_lr_{args.lr_max}_lr_schedule_{args.lr_schedule}.csv'
+    results_csv = f'train_FGSM_h_{args.h}_betta_{args.betta}_lambda_{args.lambda_}_epochs_{args.epochs}_lr_{args.lr_max}_lr_schedule_{args.lr_schedule}_loss_clean.csv'
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
@@ -168,7 +168,10 @@ def main():
             with torch.cuda.amp.autocast():
                 output = model(X +delta[:X.size(0)]) # gradient for theta to train with SGD or Adam
                 loss = criterion(output, y)
-                loss_robust = criterion_kl(F.log_softmax(output, dim=1),F.softmax(model(X), dim=1))     
+                loss_robust = criterion_kl(F.log_softmax(output, dim=1),F.softmax(model(X), dim=1))
+                logit_clean = model(X)
+                loss_clean = criterion(logit_clean, y)
+                     
                 
             ########### CURE + TRADE ########################################
             if epoch in regularizer_epochs:
@@ -178,15 +181,15 @@ def main():
                     regularizer = cure.regularizer(X, y, delta=delta, h=args.h)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
-                    loss = loss + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
+                    loss = loss + (1/args.batch_size)*loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
                 else:
                     regularizer = cure.regularizer(X, y, delta=None, h=args.h)
                     curvature += regularizer.item()
                     
-                    loss = loss + (1/args.batch_size)*(args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
+                    loss = loss + (1/args.batch_size)*loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
                     
             else:
-                loss = loss + (1/args.batch_size)*args.betta*loss_robust
+                loss = loss + (1/args.batch_size)*loss_clean + (1/args.batch_size)*args.betta*loss_robust
 
             opt.zero_grad()           
             scaler.scale(loss).backward()
@@ -245,15 +248,15 @@ def main():
     test_subset = Subset(test_dataset, indices)
     testloader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
     pgd_loss, pgd_acc = evaluate_pgd(testloader, model_test, 20, 1) # zero-restarts
+    print('='*50)
+    print(f'pgd_loss is :{pgd_loss} and pgd_acc(robust acc) is :{pgd_acc*100}')
+    print('='*50)
     ACC_AA_PGD = evaluate_robust_accuracy_AA_APGD(model_test, testloader, 'cuda', epsilon=8/255)
     test_loss, test_acc = evaluate_standard(testloader, model_test)
-
-    print('='*50)
-    print(f'pgd_loss is :{pgd_loss} and pgd_acc(robust acc) is :{pgd_acc*100}%')
-    print('='*50)
     print(f'Robust accuray for AA-PGD is :{ACC_AA_PGD}')
     print('='*50)
-    print(f'test_loss is :{test_loss} and test_acc(clean acc) is :{test_acc*100}%')
+    print(f'test_loss is :{test_loss} and clean_acc is:{test_acc*100}')
+
 
 
 

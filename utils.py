@@ -8,7 +8,7 @@ from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 
-# from autoattack import AutoAttack
+from autoattack import AutoAttack
 
 
 
