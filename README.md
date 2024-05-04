@@ -18,23 +18,4 @@ with ϵ = 8/255 in 6 minutes, in comparison to past work based on “free” adv
 Previous implementations used Apex-NVIDIA to accelerate the training processes on GPU. However, as using "apex" nowadays is not straightforward and reasonable, I implement "Fast Adversarial training" with PyTorch-amp scalers.
 
 
-### Prerequisites
-
-What things you need to install the software and how to install them:
-
-```bash
-# Example of how to get a development env running with Bash commands
-sudo apt update
-sudo apt install your-package-name
-
-# Clone the repository
-git clone https://github.com/yourusername/yourprojectname.git
-
-# Navigate to the directory
-cd yourprojectname
-
-# Install dependencies
-pip install -r requirements.txt
-
-``` --> 
 
