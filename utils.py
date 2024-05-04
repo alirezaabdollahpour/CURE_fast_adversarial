@@ -228,7 +228,7 @@ def evaluate_standard(test_loader, model):
 
 
 
-def evaluate_robust_accuracy_AA_APGD(model, data_loader, device, epsilon=8/255):
+def evaluate_robust_accuracy_AA_APGD(model, data_loader, device, epsilon):
     # Put the model in evaluation mode
     model.eval()
 
@@ -256,4 +256,53 @@ def evaluate_robust_accuracy_AA_APGD(model, data_loader, device, epsilon=8/255):
     print(f'Robust accuracy under attack: {robust_accuracy * 100:.2f}%')
     return robust_accuracy
 
+
+def evaluate_robust_accuracy_AA_Complete(model, data_loader, device, epsilon):
+    scaler = torch.cuda.amp.GradScaler()
+    # Put the model in evaluation mode
+    model.eval()
+
+    epsilon = epsilon/255.
+    adversary = AutoAttack(model, norm='Linf', eps=epsilon, version='standard')
+
+    robust_accuracy = 0.0
+    total = 0
+
+    for inputs, labels in data_loader:
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        # Run the attack
+        inputs_adv = adversary.run_standard_evaluation(inputs, labels, bs=inputs.size(0))
+
+        # Evaluate on adversarial examples
+        with torch.cuda.amp.autocast():
+            with torch.no_grad():
+                outputs = model(inputs_adv)
+                _, predicted = torch.max(outputs, 1)
+                robust_accuracy += (predicted == labels).sum().item()
+        total += labels.size(0)
+
+    # Calculate final robust accuracy
+    robust_accuracy = robust_accuracy / total
+    # print(f'Robust accuracy under attack: {robust_accuracy * 100:.2f}%')
+    return robust_accuracy
+
+
+def evaluate_pgd_test_Alireza(test_loader, model, attack_iters, restarts, epsilon):
+    epsilon = (epsilon / 255.) / std
+    alpha = (2 / 255.) / std
+    pgd_loss = 0
+    pgd_acc = 0
+    n = 0
+    model.eval()
+    for i, (X, y) in enumerate(test_loader):
+        X, y = X.cuda(), y.cuda()
+        pgd_delta = attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts)
+        with torch.no_grad():
+            output = model(X + pgd_delta)
+            loss = F.cross_entropy(output, y)
+            pgd_loss += loss.item() * y.size(0)
+            pgd_acc += (output.max(1)[1] == y).sum().item()
+            n += y.size(0)
+    return pgd_loss/n, pgd_acc/n
 
