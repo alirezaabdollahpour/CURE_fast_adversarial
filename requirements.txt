@@ -1,2 +1,4 @@
 torchvision==0.14.1
 torch==1.13.1+cu117
+autoattack==0.1
+torchattacks== 3.5.1
