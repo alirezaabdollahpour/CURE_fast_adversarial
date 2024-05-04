@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
-
+from torch.utils.data import DataLoader, Subset
 
 from models import *
 from utils import *
@@ -28,16 +28,20 @@ def get_args():
     parser.add_argument('--batch-size', default=256, type=int)
     parser.add_argument('--h', default=1.0, type=float, help='hyperparameter for CURE regulizer')
     parser.add_argument('--lambda_', default=1.0, type=float, help='weight for CURE regulizer')
-    parser.add_argument('--betta', default=2.5, type=float, help='weight for TRADE loss')
+    parser.add_argument('--betta', default=5.0, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
-    parser.add_argument('--epochs', default=300, type=int)
-    parser.add_argument('--lr-schedule', default='cyclic', choices=['cyclic', 'multistep'])
-    parser.add_argument('--lr-min', default=0.0, type=float)
-    parser.add_argument('--lr-max', default=0.2, type=float)
+    parser.add_argument('--epochs', default=200, type=int)
+    # parser.add_argument('--lr-schedule', default='multistep', choices=['cyclic', 'multistep'])
+    parser.add_argument('--lr-min', default=1e-6, type=float)
+    parser.add_argument('--lr-max', default=0.1, type=float)
+    parser.add_argument('--lr-schedule', default='piecewise', choices=['superconverge', 'piecewise', 'linear', 'piecewisesmoothed', 'piecewisezoom', 'onedrop', 'multipledecay', 'cosine'])
+    parser.add_argument('--lr-one-drop', default=0.01, type=float)
+    parser.add_argument('--lr-drop-epoch', default=100, type=int)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
     parser.add_argument('--epsilon', default=8, type=int)
     parser.add_argument('--alpha', default=10, type=float, help='Step size')
+    parser.add_argument('--opt', default='SGD', type=str, help='optimizer')
     parser.add_argument('--delta', default=True, type=str, help='passing to CURE for FGSM direction rather thatn z')
     parser.add_argument('--delta-init', default='random', choices=['zero', 'random', 'previous'],
         help='Perturbation initialization method')
@@ -64,17 +68,20 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    train_loader, test_loader = get_loaders(args.data_dir, args.batch_size)
+    train_loader, test_loader, train_dataset, test_dataset = get_loaders(args.data_dir, args.batch_size)
 
     epsilon = (args.epsilon / 255.) / std
     alpha = (args.alpha / 255.) / std
     pgd_alpha = (2 / 255.) / std
 
-    model = PreActResNet18().cuda()
+    # model = PreActResNet18().cuda()
+    model = WideResNet().cuda()
     model.train()
 
-    opt = torch.optim.SGD(model.parameters(), lr=args.lr_max, momentum=args.momentum, weight_decay=args.weight_decay)
-    # opt = torch.optim.Adam(model.parameters(), lr=args.lr_max, weight_decay=args.weight_decay)
+    if args.opt == 'SGD':
+        opt = torch.optim.SGD(model.parameters(), lr=args.lr_max, momentum=args.momentum, weight_decay=args.weight_decay)
+    else:
+        opt = torch.optim.Adam(model.parameters(), lr=args.lr_max, weight_decay=args.weight_decay)
 
     # Necessary for FP16
     scaler = torch.cuda.amp.GradScaler()
@@ -87,13 +94,37 @@ def main():
         delta = torch.zeros(args.batch_size, 3, 32, 32).cuda()
 
     lr_steps = args.epochs * len(train_loader)
-    if args.lr_schedule == 'cyclic':
-        scheduler = torch.optim.lr_scheduler.CyclicLR(opt, base_lr=args.lr_min, max_lr=args.lr_max,
-            step_size_up=lr_steps / 2, step_size_down=lr_steps / 2)
+    ################# Learning rate schedule ####################################
+    if args.lr_schedule == 'superconverge':
+        lr_schedule = lambda t: np.interp([t], [0, args.epochs * 2 // 5, args.epochs], [0, args.lr_max, 0])[0]
+    elif args.lr_schedule == 'piecewise':
+        def lr_schedule(t):
+            if t / args.epochs < 0.5:
+                return args.lr_max
+            elif t / args.epochs < 0.75:
+                return args.lr_max / 10.
+            else:
+                return args.lr_max / 100.
+    elif args.lr_schedule == 'linear':
+        lr_schedule = lambda t: np.interp([t], [0, args.epochs // 3, args.epochs * 2 // 3, args.epochs], [args.lr_max, args.lr_max, args.lr_max / 10, args.lr_max / 100])[0]
+    elif args.lr_schedule == 'onedrop':
+        def lr_schedule(t):
+            if t < args.lr_drop_epoch:
+                return args.lr_max
+            else:
+                return args.lr_one_drop
+    elif args.lr_schedule == 'multipledecay':
+        def lr_schedule(t):
+            return args.lr_max - (t//(args.epochs//10))*(args.lr_max/10)
+    elif args.lr_schedule == 'cosine': 
+        def lr_schedule(t): 
+            return args.lr_max * 0.5 * (1 + np.cos(t / args.epochs * np.pi))   
+    elif args.lr_schedule == 'cyclic':
+        scheduler = torch.optim.lr_scheduler.CyclicLR(opt, base_lr=args.lr_min, max_lr=args.lr_max, step_size_up=lr_steps / 2, step_size_down=lr_steps / 2)
     elif args.lr_schedule == 'multistep':
         scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps / 2, lr_steps * 3 / 4], gamma=0.1)
 
-    regularizer_epochs = range(10, int(((args.epochs)/2))+1, 10)
+    regularizer_epochs = range(args.epochs-20, args.epochs+1,1)
     # Training
     prev_robust_acc = 0.
     start_train_time = time.time()
@@ -108,6 +139,8 @@ def main():
             X, y = X.cuda(), y.cuda()
             if i == 0:
                 first_batch = (X, y)
+            lr = lr_schedule(epoch + (i + 1) / len(train_loader))
+            opt.param_groups[0].update(lr=lr)
             if args.delta_init != 'previous':
                 delta = torch.zeros_like(X).cuda()
             if args.delta_init == 'random':
@@ -118,6 +151,7 @@ def main():
             with torch.cuda.amp.autocast():
                 output = model(X + delta[:X.size(0)])
                 loss = F.cross_entropy(output, y)
+
 
             scaler.scale(loss).backward()
 
@@ -132,7 +166,7 @@ def main():
                 loss = criterion(output, y)
                 loss_robust = criterion_kl(F.log_softmax(output, dim=1),F.softmax(model(X), dim=1))     
                 
-            ########### CURE ########################################
+            ########### CURE + TRADE ########################################
             if epoch in regularizer_epochs:
                 # Total loss : loss + TRADE_loss + CURE_regulizer
 
@@ -140,18 +174,17 @@ def main():
                     regularizer = cure.regularizer(X, y, delta=delta, h=args.h)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
-                    loss = loss + (1.0 / args.batch_size)*(args.lambda_)*regularizer + (1.0 / args.batch_size)*args.betta*loss_robust
+                    loss = loss + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
                 else:
                     regularizer = cure.regularizer(X, y, delta=None, h=args.h)
                     curvature += regularizer.item()
                     
-                    loss = loss + (1.0 / args.batch_size)*(args.lambda_)*regularizer + (1.0 / args.batch_size)*args.betta*loss_robust
+                    loss = loss + (1/args.batch_size)*(args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
                     
             else:
-                loss = loss + (1.0 / args.batch_size)*args.betta*loss_robust
+                loss = loss + (1/args.batch_size)*args.betta*loss_robust
 
-            opt.zero_grad()
-            
+            opt.zero_grad()           
             scaler.scale(loss).backward()
             scaler.step(opt)
             scaler.update()
@@ -159,7 +192,7 @@ def main():
             train_loss += loss.item() * y.size(0)
             train_acc += (output.max(1)[1] == y).sum().item()
             train_n += y.size(0)
-            scheduler.step()
+            # scheduler.step()
         if args.early_stop:
             # Check current PGD robustness of model using random minibatch
             X, y = first_batch
@@ -184,7 +217,7 @@ def main():
         print('Total epoch time: %.4f minutes', (epoch_time - start_epoch_time)/60)
         ###########################################################################
 
-        lr = scheduler.get_lr()[0]
+        # lr = scheduler.get_lr()[0]
 
 
     train_time = time.time()
@@ -193,13 +226,27 @@ def main():
     torch.save(best_state_dict, os.path.join(args.out_dir, 'model.pth'))
 
     # Evaluation
-    model_test = PreActResNet18().cuda()
+    # model_test = PreActResNet18().cuda()
+    model_test = WideResNet().cuda()
     model_test.load_state_dict(best_state_dict)
     model_test.float()
     model_test.eval()
 
-    pgd_loss, pgd_acc = evaluate_pgd(test_loader, model_test, 20, 10)
-    test_loss, test_acc = evaluate_standard(test_loader, model_test)
+    # Select 500 random indices from the test set
+    indices = torch.randperm(len(test_dataset))[:1024]
+    # Create the subset
+    test_subset = Subset(test_dataset, indices)
+    testloader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
+    pgd_loss, pgd_acc = evaluate_pgd(testloader, model_test, 20, 1) # zero-restarts
+    ACC_AA_PGD = evaluate_robust_accuracy_AA_APGD(model_test, testloader, 'cuda', epsilon=8/255)
+    test_loss, test_acc = evaluate_standard(testloader, model_test)
+
+    print('='*50)
+    print(f'pgd_loss is :{pgd_loss} and pgd_acc(robust acc) is :{pgd_acc*100}%')
+    print('='*50)
+    print(f'Robust accuray for AA-PGD is :{ACC_AA_PGD}')
+    print('='*50)
+    print(f'test_loss is :{test_loss} and test_acc(clean acc) is :{test_acc*100}%')
 
 
 
