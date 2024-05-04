@@ -148,7 +148,7 @@ def get_loaders(dir_, batch_size):
         pin_memory=True,
         num_workers=2,
     )
-    return train_loader, test_loader
+    return train_loader, test_loader, train_dataset, test_dataset
 
 
 def attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
