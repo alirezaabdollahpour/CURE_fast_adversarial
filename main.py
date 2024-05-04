@@ -4,6 +4,7 @@ import logging
 import os
 import time
 import gc
+import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
@@ -63,7 +64,7 @@ def main():
     state = {k: v for k, v in args._get_kwargs()}
     print(state)
 
-
+    results_csv = f'train_FGSM_h_{args.h}_betta_{args.betta}_lambda_{args.lambda_}_epochs_{args.epochs}_lr_{args.lr_max}_lr_schedule_{args.lr_schedule}.csv'
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
@@ -128,11 +129,14 @@ def main():
     # Training
     prev_robust_acc = 0.
     start_train_time = time.time()
+    accuracy_df = pd.DataFrame(columns=['epoch','loss_train','ACC_train','ACC_test'])
     for epoch in range(args.epochs):
         print("Start training")
         start_epoch_time = time.time()
         train_loss = 0
+        test_loss  = 0
         train_acc = 0
+        test_acc = 0
         train_n = 0
         curvature = 0.0
         for i, (X, y) in tqdm(enumerate(train_loader)):
@@ -207,6 +211,7 @@ def main():
                 break
             prev_robust_acc = robust_acc
             best_state_dict = copy.deepcopy(model.state_dict())
+            test_acc = robust_acc
         epoch_time = time.time()
         ############## Print Information ##########################################
         print(f'curvature for epoch:{epoch} is :{curvature}')
@@ -216,10 +221,12 @@ def main():
         epoch_time = time.time()
         print('Total epoch time: %.4f minutes', (epoch_time - start_epoch_time)/60)
         ###########################################################################
+        accuracy_df = accuracy_df._append({'epoch': epoch, 'loss_train': train_loss ,'ACC_train':train_acc,'ACC_test':test_acc}, ignore_index=True)
 
         # lr = scheduler.get_lr()[0]
 
-
+    # Save the DataFrame to a CSV file
+    accuracy_df.to_csv(results_csv, index=False)
     train_time = time.time()
     if not args.early_stop:
         best_state_dict = model.state_dict()
