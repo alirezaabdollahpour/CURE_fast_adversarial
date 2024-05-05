@@ -8,6 +8,8 @@ import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.optim as optim
+from torch.optim.lr_scheduler import StepLR
 import torch.nn.functional as F
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
@@ -29,21 +31,21 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=256, type=int)
     parser.add_argument('--h', default=3.0, type=float, help='hyperparameter for CURE regulizer')
-    parser.add_argument('--lambda_', default=1.0, type=float, help='weight for CURE regulizer')
+    parser.add_argument('--lambda_', default=4, type=float, help='weight for CURE regulizer')
     parser.add_argument('--betta', default=5.0, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
     parser.add_argument('--epochs', default=30, type=int)
     # parser.add_argument('--lr-schedule', default='multistep', choices=['cyclic', 'multistep'])
     parser.add_argument('--lr-min', default=0.0, type=float)
     parser.add_argument('--lr-max', default=0.2, type=float)
-    parser.add_argument('--lr-schedule', default='linear', choices=['superconverge', 'piecewise', 'linear', 'piecewisesmoothed', 'piecewisezoom', 'onedrop', 'multipledecay', 'cosine','cyclic','fix'])
+    parser.add_argument('--lr-schedule', default='linear', choices=['superconverge', 'piecewise', 'linear', 'piecewisesmoothed', 'piecewisezoom', 'onedrop', 'multipledecay', 'cosine','cyclic', 'fix', 'multistep', 'StepLR'])
     parser.add_argument('--lr-one-drop', default=0.01, type=float)
     parser.add_argument('--lr-drop-epoch', default=100, type=int)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
     parser.add_argument('--momentum', default=0.9, type=float)
     parser.add_argument('--epsilon', default=8, type=int)
     parser.add_argument('--alpha', default=10, type=float, help='Step size')
-    parser.add_argument('--opt', default='SGD', type=str, help='optimizer')
+    parser.add_argument('--opt', default='SGD', type=str, choices=['SGD','Adam'], help='optimizer')
     parser.add_argument('--delta', default='linf', type=str, choices=['linf', 'random', 'classic', 'FGSM', 'None'] ,help='passing to CURE for FGSM direction rather thatn z')
     parser.add_argument('--delta-init', default='random', choices=['zero', 'random', 'previous'],
         help='Perturbation initialization method')
@@ -65,7 +67,7 @@ def main():
     state = {k: v for k, v in args._get_kwargs()}
     print(state)
 
-    results_csv = f'train_FGSM_h_{args.h}_betta_{args.betta}_lambda_{args.lambda_}_epochs_{args.epochs}_lr_{args.lr_max}_lr_schedule_{args.lr_schedule}_loss_clean.csv'
+    results_csv = f'train_FGSM_h_{args.h}_betta_{args.betta}_lambda_{args.lambda_}_epochs_{args.epochs}_lr_{args.lr_max}_lr_schedule_{args.lr_schedule}_{args.delta}_loss_clean.csv'
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
@@ -82,7 +84,7 @@ def main():
 
     if args.opt == 'SGD':
         opt = torch.optim.SGD(model.parameters(), lr=args.lr_max, momentum=args.momentum, weight_decay=args.weight_decay)
-    else:
+    elif args.opt == 'Adam':
         opt = torch.optim.Adam(model.parameters(), lr=args.lr_max, weight_decay=args.weight_decay)
 
     # Necessary for FP16
@@ -90,7 +92,7 @@ def main():
     amp_args = dict(opt_level=args.opt_level, loss_scale=args.loss_scale, verbosity=True)
     criterion = nn.CrossEntropyLoss()
     criterion_kl = nn.KLDivLoss(reduction='sum')
-    cure = CURE(model, opt=opt)
+    cure = CURE(model, opt=opt, lambda_=args.lambda_)
 
     if args.delta_init == 'previous':
         delta = torch.zeros(args.batch_size, 3, 32, 32).cuda()
@@ -124,9 +126,12 @@ def main():
     elif args.lr_schedule == 'cyclic':
         scheduler = torch.optim.lr_scheduler.CyclicLR(opt, base_lr=args.lr_min, max_lr=args.lr_max, step_size_up=lr_steps / 2, step_size_down=lr_steps / 2)
     elif args.lr_schedule == 'multistep':
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps / 2, lr_steps * 3 / 4], gamma=0.1)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[args.lr_max, args.lr_min], gamma=0.001)
+    
+    elif args.lr_schedule == 'StepLR':
+        scheduler = optim.lr_scheduler.StepLR(opt, step_size=10**6, gamma=1)
 
-    regularizer_epochs = range(1, args.epochs+1,1)
+    regularizer_epochs = range(args.epochs-20, args.epochs+1,1)
     # Training
     prev_robust_acc = 0.
     start_train_time = time.time()
@@ -144,7 +149,7 @@ def main():
         for i, (X, y) in tqdm(enumerate(train_loader)):
             X, y = X.cuda(), y.cuda()
             
-            if args.lr_schedule != 'cyclic' and args.lr_schedule != 'fix':
+            if args.lr_schedule != 'cyclic' and args.lr_schedule != 'fix' and args.lr_schedule != 'multistep' and args.lr_schedule != 'StepLR':
                 lr = lr_schedule(epoch + (i + 1) / len(train_loader))
                 opt.param_groups[0].update(lr=lr)
             
@@ -201,13 +206,13 @@ def main():
                     regularizer = cure.regularizer(X, y, delta='random', h=args.h)
                     curvature += regularizer.item()
                     
-                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
+                    loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust
 
                 elif args.delta == 'FGSM':
                     regularizer = cure.regularizer(X, y, delta='FGSM', h=args.h, X_adv=X +delta[:X.size(0)])
                     curvature += regularizer.item()
                     
-                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
+                    loss = loss + loss_clean + (args.lambda_)*((1/args.batch_size))*regularizer + (1/args.batch_size)*args.betta*loss_robust
                     
                 elif args.delta == 'None':
                     loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust
@@ -223,7 +228,13 @@ def main():
             train_n += y.size(0)
             
             if args.lr_schedule == 'cyclic':
-                scheduler.step()    
+                scheduler.step()  
+            elif args.lr_schedule == 'multistep':
+                scheduler.step()
+
+            elif args.lr_schedule == 'StepLR':
+                scheduler.step()
+        
                 
             
         if args.early_stop:
