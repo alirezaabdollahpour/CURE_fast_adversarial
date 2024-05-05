@@ -204,7 +204,7 @@ def main():
                     regularizer = cure.regularizer(X, y, delta='linf', h=args.h, X_adv=best_adv)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
-                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                    loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
                 elif args.delta == 'random':
                     regularizer = cure.regularizer(X, y, delta='random', h=args.h)
                     curvature += regularizer.item()
@@ -221,7 +221,7 @@ def main():
                     regularizer = cure.regularizer(X, y, delta='FGSM', h=args.h, X_adv=X +delta[:X.size(0)])
                     curvature += regularizer.item()
                     
-                    loss = loss + loss_clean + (args.lambda_)*((1/args.batch_size))*regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                    loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
                     
                 elif args.delta == 'None':
                     loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
