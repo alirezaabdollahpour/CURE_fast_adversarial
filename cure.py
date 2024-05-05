@@ -101,22 +101,12 @@ class CURE():
             # return torch.sum(reg) / float(inputs.size(0))
             return torch.sum(reg)
 
-        elif delta == 'linf':
+        elif delta == 'linf' and X_adv != None:
             
-            inputs.requires_grad_(True)
-            with torch.cuda.amp.autocast():
-                outputs_pos = self.net.eval()(inputs + 2*delta[:inputs.size(0)])
-                outputs_orig = self.net.eval()(inputs)
+            g_2 = self.get_input_grad(self.net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
+            g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
 
-                loss_pos = self.criterion(outputs_pos, targets)
-                loss_orig = self.criterion(outputs_orig, targets)
-                
-            grad_diff = torch.autograd.grad((loss_pos-loss_orig), inputs, only_inputs=True)[0]
-
-            reg = grad_diff.reshape(grad_diff.size(0), -1).norm(dim=1)
-            # reg = (1./h**2)*(reg**2)
-            reg = (reg**2)
-            self.net.zero_grad()
+            reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
 
             return torch.sum(reg)
         

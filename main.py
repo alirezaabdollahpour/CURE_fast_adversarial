@@ -29,7 +29,7 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=256, type=int)
     parser.add_argument('--h', default=3.0, type=float, help='hyperparameter for CURE regulizer')
-    parser.add_argument('--lambda_', default=1000.0, type=float, help='weight for CURE regulizer')
+    parser.add_argument('--lambda_', default=1.0, type=float, help='weight for CURE regulizer')
     parser.add_argument('--betta', default=5.0, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
     parser.add_argument('--epochs', default=30, type=int)
@@ -186,8 +186,8 @@ def main():
                 # Total loss : loss + TRADE_loss + CURE_regulizer
 
                 if args.delta == 'linf':
-                    r_linf = fmn(model=model, inputs=X , labels=y, norm = float('inf'), steps=3)
-                    regularizer = cure.regularizer(X, y, delta=r_linf, h=args.h)
+                    best_adv, r_linf = fmn(model=model, inputs=X , labels=y, norm = float('inf'), steps=3)
+                    regularizer = cure.regularizer(X, y, delta='linf', h=args.h, X_adv=best_adv)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
                     loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust

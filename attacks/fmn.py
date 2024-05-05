@@ -222,4 +222,4 @@ def fmn(model: nn.Module,
     r = best_adv-inputs
     # r = linf_projection_Alireza(δ=r, ε=torch.tensor([8/255]).cuda())
     # linf_projection_(r.detach().cpu(), ε=torch.tensor([8/255]))
-    return r
+    return best_adv, r
