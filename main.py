@@ -29,12 +29,12 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=256, type=int)
     parser.add_argument('--h', default=3.0, type=float, help='hyperparameter for CURE regulizer')
-    parser.add_argument('--lambda_', default=1000.0, type=float, help='weight for CURE regulizer')
+    parser.add_argument('--lambda_', default=1.0, type=float, help='weight for CURE regulizer')
     parser.add_argument('--betta', default=5.0, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
     parser.add_argument('--epochs', default=30, type=int)
     # parser.add_argument('--lr-schedule', default='multistep', choices=['cyclic', 'multistep'])
-    parser.add_argument('--lr-min', default=1e-6, type=float)
+    parser.add_argument('--lr-min', default=0.0, type=float)
     parser.add_argument('--lr-max', default=0.2, type=float)
     parser.add_argument('--lr-schedule', default='linear', choices=['superconverge', 'piecewise', 'linear', 'piecewisesmoothed', 'piecewisezoom', 'onedrop', 'multipledecay', 'cosine'])
     parser.add_argument('--lr-one-drop', default=0.01, type=float)
@@ -44,7 +44,7 @@ def get_args():
     parser.add_argument('--epsilon', default=8, type=int)
     parser.add_argument('--alpha', default=10, type=float, help='Step size')
     parser.add_argument('--opt', default='SGD', type=str, help='optimizer')
-    parser.add_argument('--delta', default='linf', type=str, choices=['linf', 'random', 'classis'] ,help='passing to CURE for FGSM direction rather thatn z')
+    parser.add_argument('--delta', default='linf', type=str, choices=['linf', 'random', 'classis', 'None'] ,help='passing to CURE for FGSM direction rather thatn z')
     parser.add_argument('--delta-init', default='random', choices=['zero', 'random', 'previous'],
         help='Perturbation initialization method')
     parser.add_argument('--out-dir', default='train_fgsm_output', type=str, help='Output directory')
@@ -198,8 +198,8 @@ def main():
                     
                     loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
                     
-            else:
-                loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust
+                elif args.delta == 'None':
+                    loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust
 
             opt.zero_grad()           
             scaler.scale(loss).backward()
