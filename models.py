@@ -111,11 +111,16 @@ def PreActResNet18():
 ################################## WideResNet ##################################################
 
 
+import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
 class BasicBlock(nn.Module):
     def __init__(self, in_planes, out_planes, stride, dropRate=0.0):
         super(BasicBlock, self).__init__()
         self.bn1 = nn.BatchNorm2d(in_planes)
-        self.celu = celu
         self.relu1 = nn.ReLU(inplace=True)
         self.conv1 = nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                                padding=1, bias=False)
@@ -130,13 +135,13 @@ class BasicBlock(nn.Module):
 
     def forward(self, x):
         if not self.equalInOut:
-            x = self.celu(self.bn1(x))
+            x = self.relu1(self.bn1(x))
         else:
-            out = self.celu(self.bn1(x))
+            out = self.relu1(self.bn1(x))
         if self.equalInOut:
-            out = self.celu(self.bn2(self.conv1(out)))
+            out = self.relu2(self.bn2(self.conv1(out)))
         else:
-            out = self.celu(self.bn2(self.conv1(x)))
+            out = self.relu2(self.bn2(self.conv1(x)))
         if self.droprate > 0:
             out = F.dropout(out, p=self.droprate, training=self.training)
         out = self.conv2(out)
@@ -180,7 +185,6 @@ class WideResNet(nn.Module):
         # global average pooling and classifier
         self.bn1 = nn.BatchNorm2d(nChannels[3])
         self.relu = nn.ReLU(inplace=True)
-        self.celu = celu 
         self.fc = nn.Linear(nChannels[3], num_classes)
         self.nChannels = nChannels[3]
 
@@ -199,7 +203,7 @@ class WideResNet(nn.Module):
         out = self.block1(out)
         out = self.block2(out)
         out = self.block3(out)
-        out = self.celu(self.bn1(out))
+        out = self.relu(self.bn1(out))
         out = F.avg_pool2d(out, 8)
         out = out.view(-1, self.nChannels)
         return self.fc(out)

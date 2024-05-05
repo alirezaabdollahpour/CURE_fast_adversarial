@@ -4,13 +4,14 @@ import torch.nn as nn
 
 class CURE():
     
-    def __init__(self, net, opt):
+    def __init__(self, net, opt, lambda_):
 
         self.scaler = torch.cuda.amp.GradScaler()
         self.net = net
         self.criterion = nn.CrossEntropyLoss()
         self.opt = opt
         self.eps = 8./255.
+        self.lambda_ = lambda_
     
     def get_uniform_delta(self, input, eps, requires_grad=True):
         delta = torch.zeros(input.shape).cuda()
@@ -73,10 +74,9 @@ class CURE():
 
             reg = grad_diff.reshape(grad_diff.size(0), -1).norm(dim=1)
             # reg = (1./h**2)*(reg**2)
-            reg = (reg**2)
+            # reg = (reg**2)
             self.net.zero_grad()
-
-            return torch.sum(reg), norm_grad
+            return self.lambda_*torch.sum(reg)/float(inputs.size(0)), norm_grad
         
         elif delta == 'random':
             
@@ -108,7 +108,7 @@ class CURE():
 
             reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
 
-            return torch.sum(reg)
+            return reg
         
 
         elif delta == 'FGSM' and X_adv != None:
@@ -116,9 +116,10 @@ class CURE():
             g_2 = self.get_input_grad(self.net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
             g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
 
-            reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
+            # reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
+            reg = ((g_3-g_2)).mean(dim=0).sum()
             
 
             
-            return reg
+            return torch.sum(reg)/float(inputs.size(0))
 
