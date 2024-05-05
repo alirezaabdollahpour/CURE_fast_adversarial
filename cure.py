@@ -10,12 +10,27 @@ class CURE():
         self.net = net
         self.criterion = nn.CrossEntropyLoss()
         self.opt = opt
+        self.eps = 8./255.
     
     def get_uniform_delta(self, input, eps, requires_grad=True):
         delta = torch.zeros(input.shape).cuda()
         delta.uniform_(-eps, eps)
         delta.requires_grad = requires_grad
         return delta
+
+    def get_input_grad(self, net, X, y, opt, eps, delta_init='none', backprop=False):
+        if delta_init == 'none':
+            delta = torch.zeros_like(X, requires_grad=True)
+        elif delta_init == 'random_uniform':
+            delta = self.get_uniform_delta(X.shape, eps, requires_grad=True)
+
+        with torch.cuda.amp.autocast():
+            output = self.net(X + delta)
+            loss = self.criterion(output, y)
+            grad = torch.autograd.grad(loss, delta, create_graph=True if backprop else False)[0]
+        if not backprop:
+            grad, delta = grad.detach(), delta.detach()
+        return grad
 
     def _find_z(self, inputs, targets, h):
         '''
@@ -90,7 +105,7 @@ class CURE():
             
             inputs.requires_grad_(True)
             with torch.cuda.amp.autocast():
-                outputs_pos = self.net.eval()(inputs + delta[:inputs.size(0)])
+                outputs_pos = self.net.eval()(inputs + 2*delta[:inputs.size(0)])
                 outputs_orig = self.net.eval()(inputs)
 
                 loss_pos = self.criterion(outputs_pos, targets)
@@ -104,4 +119,16 @@ class CURE():
             self.net.zero_grad()
 
             return torch.sum(reg)
+        
+
+        elif delta == 'FGSM':
+            
+            g_2 = self.get_input_grad(self.net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
+            g_3 = self.get_input_grad(self.net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=True)
+
+            reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
+            
+
+            
+            return reg
 

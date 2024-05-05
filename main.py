@@ -29,14 +29,14 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=256, type=int)
     parser.add_argument('--h', default=3.0, type=float, help='hyperparameter for CURE regulizer')
-    parser.add_argument('--lambda_', default=1.0, type=float, help='weight for CURE regulizer')
+    parser.add_argument('--lambda_', default=1000.0, type=float, help='weight for CURE regulizer')
     parser.add_argument('--betta', default=5.0, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
     parser.add_argument('--epochs', default=30, type=int)
     # parser.add_argument('--lr-schedule', default='multistep', choices=['cyclic', 'multistep'])
     parser.add_argument('--lr-min', default=0.0, type=float)
     parser.add_argument('--lr-max', default=0.2, type=float)
-    parser.add_argument('--lr-schedule', default='linear', choices=['superconverge', 'piecewise', 'linear', 'piecewisesmoothed', 'piecewisezoom', 'onedrop', 'multipledecay', 'cosine'])
+    parser.add_argument('--lr-schedule', default='linear', choices=['superconverge', 'piecewise', 'linear', 'piecewisesmoothed', 'piecewisezoom', 'onedrop', 'multipledecay', 'cosine','cyclic','fix'])
     parser.add_argument('--lr-one-drop', default=0.01, type=float)
     parser.add_argument('--lr-drop-epoch', default=100, type=int)
     parser.add_argument('--weight-decay', default=5e-4, type=float)
@@ -44,7 +44,7 @@ def get_args():
     parser.add_argument('--epsilon', default=8, type=int)
     parser.add_argument('--alpha', default=10, type=float, help='Step size')
     parser.add_argument('--opt', default='SGD', type=str, help='optimizer')
-    parser.add_argument('--delta', default='linf', type=str, choices=['linf', 'random', 'classis', 'None'] ,help='passing to CURE for FGSM direction rather thatn z')
+    parser.add_argument('--delta', default='linf', type=str, choices=['linf', 'random', 'classic', 'FGSM', 'None'] ,help='passing to CURE for FGSM direction rather thatn z')
     parser.add_argument('--delta-init', default='random', choices=['zero', 'random', 'previous'],
         help='Perturbation initialization method')
     parser.add_argument('--out-dir', default='train_fgsm_output', type=str, help='Output directory')
@@ -143,10 +143,14 @@ def main():
         curvature = 0.0
         for i, (X, y) in tqdm(enumerate(train_loader)):
             X, y = X.cuda(), y.cuda()
+            
+            if args.lr_schedule != 'cyclic' and args.lr_schedule != 'fix':
+                lr = lr_schedule(epoch + (i + 1) / len(train_loader))
+                opt.param_groups[0].update(lr=lr)
+            
             if i == 0:
                 first_batch = (X, y)
-            lr = lr_schedule(epoch + (i + 1) / len(train_loader))
-            opt.param_groups[0].update(lr=lr)
+
             if args.delta_init != 'previous':
                 delta = torch.zeros_like(X).cuda()
             if args.delta_init == 'random':
@@ -178,10 +182,11 @@ def main():
             ########### CURE + TRADE ########################################
             if epoch in regularizer_epochs:
                 ########### FMN_Linf for proper direction ##################
-                r_linf = fmn(model=model, inputs=X , labels=y, norm = float('inf'), steps=3) 
+                 
                 # Total loss : loss + TRADE_loss + CURE_regulizer
 
                 if args.delta == 'linf':
+                    r_linf = fmn(model=model, inputs=X , labels=y, norm = float('inf'), steps=3)
                     regularizer = cure.regularizer(X, y, delta=r_linf, h=args.h)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
@@ -194,6 +199,12 @@ def main():
 
                 elif args.delta == 'classic':
                     regularizer = cure.regularizer(X, y, delta='random', h=args.h)
+                    curvature += regularizer.item()
+                    
+                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
+
+                elif args.delta == 'FGSM':
+                    regularizer = cure.regularizer(X, y, delta='FGSM', h=args.h)
                     curvature += regularizer.item()
                     
                     loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
@@ -210,7 +221,11 @@ def main():
             train_acc += (output.max(1)[1] == y).sum().item()
             train_acc_clean += (logit_clean.max(1)[1] == y).sum().item()
             train_n += y.size(0)
-            # scheduler.step()
+            
+            if args.lr_schedule == 'cyclic':
+                scheduler.step()    
+                
+            
         if args.early_stop:
             # Check current PGD robustness of model using random minibatch
             X, y = first_batch
