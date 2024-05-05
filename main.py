@@ -32,6 +32,7 @@ def get_args():
     parser.add_argument('--batch-size', default=256, type=int)
     parser.add_argument('--h', default=3.0, type=float, help='hyperparameter for CURE regulizer')
     parser.add_argument('--lambda_', default=4, type=float, help='weight for CURE regulizer')
+    parser.add_argument('--gamma', default=0.5, type=float, help='weight for HAT loss')
     parser.add_argument('--betta', default=5.0, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
     parser.add_argument('--epochs', default=30, type=int)
@@ -177,7 +178,15 @@ def main():
             
             # Forward pass with amp
             with torch.cuda.amp.autocast():
-                output = model(X +delta[:X.size(0)]) # gradient for theta to train with SGD or Adam
+                ############ HAT #################
+                X_adv_hat = X + delta[:X.size(0)]
+                X_hr = X + 2 * (X_adv_hat - X)
+                y_hr = model(X_hr).argmax(dim=1)
+                out_help = model(X_hr)
+                loss_help = F.cross_entropy(out_help, y_hr, reduction='mean')
+                ##################################
+                
+                output = model(X + delta[:X.size(0)]) # gradient for theta to train with SGD or Adam
                 loss = criterion(output, y)
                 loss_robust = criterion_kl(F.log_softmax(output, dim=1),F.softmax(model(X), dim=1))
                 logit_clean = model(X)
@@ -195,27 +204,32 @@ def main():
                     regularizer = cure.regularizer(X, y, delta='linf', h=args.h, X_adv=best_adv)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
-                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
+                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
                 elif args.delta == 'random':
                     regularizer = cure.regularizer(X, y, delta='random', h=args.h)
                     curvature += regularizer.item()
                     
-                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
+                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
 
                 elif args.delta == 'classic':
                     regularizer = cure.regularizer(X, y, delta='random', h=args.h)
                     curvature += regularizer.item()
                     
-                    loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust
+                    loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
 
                 elif args.delta == 'FGSM':
                     regularizer = cure.regularizer(X, y, delta='FGSM', h=args.h, X_adv=X +delta[:X.size(0)])
                     curvature += regularizer.item()
                     
-                    loss = loss + loss_clean + (args.lambda_)*((1/args.batch_size))*regularizer + (1/args.batch_size)*args.betta*loss_robust
+                    loss = loss + loss_clean + (args.lambda_)*((1/args.batch_size))*regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
                     
                 elif args.delta == 'None':
-                    loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust
+                    loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+            
+            else:
+                loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                
+                
 
             opt.zero_grad()           
             scaler.scale(loss).backward()
