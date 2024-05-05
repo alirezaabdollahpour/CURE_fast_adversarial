@@ -7,3 +7,4 @@ test.py
 *.csv
 train_NTK.py
 notebooks/
+LLR.py

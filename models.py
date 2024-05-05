@@ -3,8 +3,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
+############################### ACtivation Funtions #########################################
+def SmoothReLU(x, alpha=200):
+    x = x.clamp(min=0)
+    return x - 1/alpha*torch.log(alpha*x + 1)
+
+def SwishParameteric(x, beta=2):
+    return x*torch.sigmoid(beta*x)
+
 swish = lambda x: x*torch.sigmoid(x)
 celu = lambda x: F.celu(x)
+gelu = lambda x: F.gelu(x)
+elu = lambda x: F.elu(x)
 ###################### PreActResNet ###################################################
 class PreActBlock(nn.Module):
     '''Pre-activation version of the BasicBlock.'''
