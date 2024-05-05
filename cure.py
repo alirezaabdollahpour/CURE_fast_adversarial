@@ -95,11 +95,11 @@ class CURE():
 
             reg = grad_diff.reshape(grad_diff.size(0), -1).norm(dim=1)
             # reg = (1./h**2)*(reg**2)
-            reg = (reg**2)
+            # reg = (reg**2)
             self.net.zero_grad()
 
             # return torch.sum(reg) / float(inputs.size(0))
-            return torch.sum(reg)
+            return reg/float(inputs.size(0))
 
         elif delta == 'linf' and X_adv != None:
             
@@ -108,7 +108,7 @@ class CURE():
 
             reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
 
-            return reg
+            return reg/float(inputs.size(0))
         
 
         elif delta == 'FGSM' and X_adv != None:
