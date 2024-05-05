@@ -204,7 +204,7 @@ def main():
                     loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
 
                 elif args.delta == 'FGSM':
-                    regularizer = cure.regularizer(X, y, delta='FGSM', h=args.h)
+                    regularizer = cure.regularizer(X, y, delta='FGSM', h=args.h, X_adv=X +delta[:X.size(0)])
                     curvature += regularizer.item()
                     
                     loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust

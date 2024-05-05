@@ -54,7 +54,7 @@ class CURE():
         return z, norm_grad
 
 
-    def regularizer(self, inputs, targets, delta, h):
+    def regularizer(self, inputs,targets, delta, h, X_adv=None):
 
         '''
         Regularizer term in CURE
@@ -121,10 +121,10 @@ class CURE():
             return torch.sum(reg)
         
 
-        elif delta == 'FGSM':
+        elif delta == 'FGSM' and X_adv != None:
             
             g_2 = self.get_input_grad(self.net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
-            g_3 = self.get_input_grad(self.net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=True)
+            g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
 
             reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
             
