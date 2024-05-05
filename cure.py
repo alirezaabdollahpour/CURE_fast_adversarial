@@ -76,7 +76,7 @@ class CURE():
             # reg = (1./h**2)*(reg**2)
             # reg = (reg**2)
             self.net.zero_grad()
-            return self.lambda_*torch.sum(reg)/float(inputs.size(0)), norm_grad
+            return self.lambda_*torch.sum(reg)/float(inputs.size(0))
         
         elif delta == 'random':
             
@@ -99,7 +99,7 @@ class CURE():
             self.net.zero_grad()
 
             # return torch.sum(reg) / float(inputs.size(0))
-            return reg/float(inputs.size(0))
+            return self.lambda_*torch.sum(reg)/float(inputs.size(0))
 
         elif delta == 'linf' and X_adv != None:
             
@@ -108,7 +108,7 @@ class CURE():
 
             reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
 
-            return reg/float(inputs.size(0))
+            return self.lambda_*torch.sum(reg)/float(inputs.size(0))
         
 
         elif delta == 'FGSM' and X_adv != None:
@@ -116,10 +116,10 @@ class CURE():
             g_2 = self.get_input_grad(self.net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
             g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
 
-            # reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
-            reg = ((g_3-g_2)).mean(dim=0).sum()
+            reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
+            # reg = ((g_3-g_2)).mean(dim=0).sum()
             
 
             
-            return torch.sum(reg)/float(inputs.size(0))
+            return self.lambda_*torch.sum(reg)/float(inputs.size(0))
 

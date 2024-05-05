@@ -306,3 +306,8 @@ def evaluate_pgd_test_Alireza(test_loader, model, attack_iters, restarts, epsilo
             n += y.size(0)
     return pgd_loss/n, pgd_acc/n
 
+
+
+# def HAT():
+    
+#     pass

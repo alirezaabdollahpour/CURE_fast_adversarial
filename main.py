@@ -132,7 +132,7 @@ def main():
     elif args.lr_schedule == 'StepLR':
         scheduler = optim.lr_scheduler.StepLR(opt, step_size=10**6, gamma=1)
 
-    regularizer_epochs = range(args.epochs-20, args.epochs+1,1)
+    regularizer_epochs = range(0, args.epochs+1,1)
     # Training
     prev_robust_acc = 0.
     start_train_time = time.time()
@@ -212,7 +212,7 @@ def main():
                     loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
 
                 elif args.delta == 'classic':
-                    regularizer = cure.regularizer(X, y, delta='random', h=args.h)
+                    regularizer = cure.regularizer(X, y, delta='classic', h=args.h)
                     curvature += regularizer.item()
                     
                     loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
