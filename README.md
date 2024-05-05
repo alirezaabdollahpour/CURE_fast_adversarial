@@ -18,4 +18,8 @@ with ϵ = 8/255 in 6 minutes, in comparison to past work based on “free” adv
 Previous implementations used Apex-NVIDIA to accelerate the training processes on GPU. However, as using "apex" nowadays is not straightforward and reasonable, I implement "Fast Adversarial training" with PyTorch-amp scalers.
 
 
+## Run this command :
+```
+python .\main.py --delta 'classic' --lr-schedule 'piecewise' --lr-max 0.1 --lr-min 0.0 --opt 'SGD' --lambda 10 --h 3 --epochs 200
 
+```
