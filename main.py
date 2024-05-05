@@ -200,7 +200,7 @@ def main():
                 # Total loss : loss + TRADE_loss + CURE_regulizer
 
                 if args.delta == 'linf':
-                    best_adv, r_linf = fmn(model=model, inputs=X , labels=y, norm = float('inf'), steps=3)
+                    best_adv, r_linf = fmn(model=model, inputs=X , labels=y, norm = 2.0, steps=3)
                     regularizer = cure.regularizer(X, y, delta='linf', h=args.h, X_adv=best_adv)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
@@ -209,7 +209,7 @@ def main():
                     regularizer = cure.regularizer(X, y, delta='random', h=args.h)
                     curvature += regularizer.item()
                     
-                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                    loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
 
                 elif args.delta == 'classic':
                     regularizer = cure.regularizer(X, y, delta='classic', h=args.h)
