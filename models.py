@@ -126,6 +126,7 @@ class BasicBlock(nn.Module):
                                padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(out_planes)
         self.relu2 = nn.ReLU(inplace=True)
+        self.swish = swish
         self.conv2 = nn.Conv2d(out_planes, out_planes, kernel_size=3, stride=1,
                                padding=1, bias=False)
         self.droprate = dropRate
@@ -135,13 +136,13 @@ class BasicBlock(nn.Module):
 
     def forward(self, x):
         if not self.equalInOut:
-            x = self.relu1(self.bn1(x))
+            x = self.swish(self.bn1(x))
         else:
-            out = self.relu1(self.bn1(x))
+            out = self.swish(self.bn1(x))
         if self.equalInOut:
-            out = self.relu2(self.bn2(self.conv1(out)))
+            out = self.swish(self.bn2(self.conv1(out)))
         else:
-            out = self.relu2(self.bn2(self.conv1(x)))
+            out = self.swish(self.bn2(self.conv1(x)))
         if self.droprate > 0:
             out = F.dropout(out, p=self.droprate, training=self.training)
         out = self.conv2(out)
@@ -152,7 +153,7 @@ class BasicBlock(nn.Module):
 
 
 class NetworkBlock(nn.Module):
-    def __init__(self, nb_layers, in_planes, out_planes, block, stride, dropRate=0.0):
+    def __init__(self, nb_layers, in_planes, out_planes, block, stride, dropRate=0.1):
         super(NetworkBlock, self).__init__()
         self.layer = self._make_layer(block, in_planes, out_planes, nb_layers, stride, dropRate)
 
@@ -167,7 +168,7 @@ class NetworkBlock(nn.Module):
 
 
 class WideResNet(nn.Module):
-    def __init__(self, depth=28, num_classes=10, widen_factor=1, dropRate=0.0):
+    def __init__(self, depth=28, num_classes=10, widen_factor=1, dropRate=0.1):
         super(WideResNet, self).__init__()
         nChannels = [16, 16 * widen_factor, 32 * widen_factor, 64 * widen_factor]
         assert ((depth - 4) % 6 == 0)
@@ -185,6 +186,7 @@ class WideResNet(nn.Module):
         # global average pooling and classifier
         self.bn1 = nn.BatchNorm2d(nChannels[3])
         self.relu = nn.ReLU(inplace=True)
+        self.swish = swish
         self.fc = nn.Linear(nChannels[3], num_classes)
         self.nChannels = nChannels[3]
 
@@ -203,7 +205,7 @@ class WideResNet(nn.Module):
         out = self.block1(out)
         out = self.block2(out)
         out = self.block3(out)
-        out = self.relu(self.bn1(out))
+        out = self.swish(self.bn1(out))
         out = F.avg_pool2d(out, 8)
         out = out.view(-1, self.nChannels)
         return self.fc(out)
