@@ -20,6 +20,6 @@ Previous implementations used Apex-NVIDIA to accelerate the training processes o
 
 ## Run this command :
 ```
-python .\main.py --delta 'classic' --lr-schedule 'piecewise' --lr-max 0.1 --lr-min 0.0 --opt 'SGD' --lambda 10 --h 3 --epochs 200
+python main.py --delta 'classic' --lr-schedule 'piecewise' --lr-max 0.1 --lr-min 0.0 --opt 'SGD' --lambda 10 --h 3 --epochs 200
 
 ```
