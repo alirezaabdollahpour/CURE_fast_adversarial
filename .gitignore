@@ -6,3 +6,4 @@ test.py
 *.xlsx
 *.csv
 train_NTK.py
+notebooks/

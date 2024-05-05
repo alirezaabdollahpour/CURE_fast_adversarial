@@ -29,13 +29,13 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=256, type=int)
     parser.add_argument('--h', default=3.0, type=float, help='hyperparameter for CURE regulizer')
-    parser.add_argument('--lambda_', default=10.0, type=float, help='weight for CURE regulizer')
+    parser.add_argument('--lambda_', default=1000.0, type=float, help='weight for CURE regulizer')
     parser.add_argument('--betta', default=5.0, type=float, help='weight for TRADE loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
-    parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--epochs', default=30, type=int)
     # parser.add_argument('--lr-schedule', default='multistep', choices=['cyclic', 'multistep'])
     parser.add_argument('--lr-min', default=1e-6, type=float)
-    parser.add_argument('--lr-max', default=0.1, type=float)
+    parser.add_argument('--lr-max', default=0.2, type=float)
     parser.add_argument('--lr-schedule', default='linear', choices=['superconverge', 'piecewise', 'linear', 'piecewisesmoothed', 'piecewisezoom', 'onedrop', 'multipledecay', 'cosine'])
     parser.add_argument('--lr-one-drop', default=0.01, type=float)
     parser.add_argument('--lr-drop-epoch', default=100, type=int)
@@ -44,7 +44,7 @@ def get_args():
     parser.add_argument('--epsilon', default=8, type=int)
     parser.add_argument('--alpha', default=10, type=float, help='Step size')
     parser.add_argument('--opt', default='SGD', type=str, help='optimizer')
-    parser.add_argument('--delta', default=True, type=str, help='passing to CURE for FGSM direction rather thatn z')
+    parser.add_argument('--delta', default='linf', type=str, choices=['linf', 'random', 'classis'] ,help='passing to CURE for FGSM direction rather thatn z')
     parser.add_argument('--delta-init', default='random', choices=['zero', 'random', 'previous'],
         help='Perturbation initialization method')
     parser.add_argument('--out-dir', default='train_fgsm_output', type=str, help='Output directory')
@@ -126,7 +126,7 @@ def main():
     elif args.lr_schedule == 'multistep':
         scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[lr_steps / 2, lr_steps * 3 / 4], gamma=0.1)
 
-    regularizer_epochs = range(args.epochs-20, args.epochs+1,1)
+    regularizer_epochs = range(1, args.epochs+1,1)
     # Training
     prev_robust_acc = 0.
     start_train_time = time.time()
@@ -178,16 +178,22 @@ def main():
             ########### CURE + TRADE ########################################
             if epoch in regularizer_epochs:
                 ########### FMN_Linf for proper direction ##################
-                r_linf = fmn(model=model, inputs=X , labels=y, norm = float('inf'), steps=2) 
+                r_linf = fmn(model=model, inputs=X , labels=y, norm = float('inf'), steps=3) 
                 # Total loss : loss + TRADE_loss + CURE_regulizer
 
-                if args.delta:
+                if args.delta == 'linf':
                     regularizer = cure.regularizer(X, y, delta=r_linf, h=args.h)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
                     loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
-                else:
-                    regularizer = cure.regularizer(X, y, delta=None, h=args.h)
+                elif args.delta == 'random':
+                    regularizer = cure.regularizer(X, y, delta='random', h=args.h)
+                    curvature += regularizer.item()
+                    
+                    loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust
+
+                elif args.delta == 'classic':
+                    regularizer = cure.regularizer(X, y, delta='random', h=args.h)
                     curvature += regularizer.item()
                     
                     loss = loss + loss_clean + (args.lambda_)*regularizer + (1/args.batch_size)*args.betta*loss_robust

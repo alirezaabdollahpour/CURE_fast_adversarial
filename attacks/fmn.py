@@ -36,7 +36,14 @@ def linf_projection_(δ: Tensor, ε: Tensor) -> Tensor:
     δ = δ.flatten(1)
     ε = ε.unsqueeze(1)
     torch.maximum(torch.minimum(δ, ε, out=δ), -ε, out=δ)
-
+    
+def linf_projection_Alireza(δ: Tensor, ε: Tensor) -> Tensor:
+    """In-place linf projection"""
+    xx = δ
+    δ = δ.flatten(1)
+    ε = ε.unsqueeze(1)
+    δ = torch.maximum(torch.minimum(δ, ε, out=δ), -ε, out=δ)
+    return δ.reshape(xx.shape)
 
 def l0_mid_points(x0: Tensor, x1: Tensor, ε: Tensor) -> Tensor:
     n_features = x0[0].numel()
@@ -212,5 +219,7 @@ def fmn(model: nn.Module,
         # clamp
         δ.data.add_(inputs).clamp_(min=0, max=1).sub_(inputs)
 
-
-    return best_adv-inputs
+    r = best_adv-inputs
+    # r = linf_projection_Alireza(δ=r, ε=torch.tensor([8/255]).cuda())
+    # linf_projection_(r.detach().cpu(), ε=torch.tensor([8/255]))
+    return r
