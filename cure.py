@@ -116,8 +116,8 @@ class CURE():
             g_2 = self.get_input_grad(self.net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
             g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
 
-            # reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
-            reg = ((g_3-g_2)).mean(dim=0).sum()
+            reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
+            # reg = ((g_3-g_2)).mean(dim=0).sum()
             
 
             

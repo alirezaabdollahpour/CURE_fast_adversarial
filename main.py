@@ -254,7 +254,7 @@ def main():
         if args.early_stop:
             # Check current PGD robustness of model using random minibatch
             X, y = first_batch
-            pgd_delta = attack_pgd(model, X, y, epsilon, pgd_alpha, 5, 1, opt)
+            pgd_delta = attack_pgd(model, X, y, epsilon, pgd_alpha, 20, 1, opt)
             with torch.no_grad():
                 output = model(clamp(X + pgd_delta[:X.size(0)], lower_limit, upper_limit))
             robust_acc = (output.max(1)[1] == y).sum().item() / y.size(0)
