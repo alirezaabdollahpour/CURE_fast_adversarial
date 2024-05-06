@@ -12,14 +12,18 @@ train empirically robust models using a much weaker and cheaper adversary, an
 approach that was previously believed to be ineffective (catastrophic overfitting, low robust test accuracy->PGD), rendering the method no
 more costly than standard training in practice. Specifically, I show that adversarial training with the fast gradient sign method (FGSM), when combined with random initialization and [CURE](https://arxiv.org/abs/1811.09716) curvature regularizer, is as effective as PGD-based training but has significantly lower
 cost. Furthermore I show that FGSM adversarial training can be further accelerated by using standard techniques for efficient training of deep networks, allowing
-us to learn a robust CIFAR10 classifier with 45% robust accuracy to PGD attacks
+us to learn a robust CIFAR10 classifier with 48.3% robust accuracy to PGD attacks
 with ϵ = 8/255 in 6 minutes, in comparison to past work based on “free” adversarial training which took 10 and 50 hours to reach the same respective thresholds.
 
 Previous implementations used Apex-NVIDIA to accelerate the training processes on GPU. However, as using "apex" nowadays is not straightforward and reasonable, I implement "Fast Adversarial training" with PyTorch-amp scalers.
 
 
-## Run this command :
+## Run this command for "long-phase" training without "CO (catastrophic overfitting)" with classical CURE :
 ```
 python main.py --delta 'classic' --lr-schedule 'piecewise' --lr-max 0.1 --lr-min 0.0 --opt 'SGD' --lambda 10 --h 3 --epochs 200
 
+```
+## Run this command for "short-phase" training without "CO (catastrophic overfitting)" with classical CURE :
+```
+python main.py --delta 'linf' --lr-schedule 'cyclic' --lr-max 0.2 --lr-min 0.0 --opt 'SGD' --lambda 4 --h 3 --epochs 30 --batch-size 128
 ```
