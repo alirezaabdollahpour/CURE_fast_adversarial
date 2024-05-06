@@ -34,6 +34,7 @@ def get_args():
     parser.add_argument('--lambda_', default=4, type=float, help='weight for CURE regulizer')
     parser.add_argument('--gamma', default=0.5, type=float, help='weight for HAT loss')
     parser.add_argument('--betta', default=5.0, type=float, help='weight for TRADE loss')
+    parser.add_argument('--kapa', default=1.0, type=float, help='weight for clean loss')
     parser.add_argument('--data-dir', default='cifar-data', type=str)
     parser.add_argument('--epochs', default=30, type=int)
     # parser.add_argument('--lr-schedule', default='multistep', choices=['cyclic', 'multistep'])
@@ -200,16 +201,16 @@ def main():
                 # Total loss : loss + TRADE_loss + CURE_regulizer
 
                 if args.delta == 'linf':
-                    best_adv, r_linf = fmn(model=model, inputs=X , labels=y, norm = 2.0, steps=3)
+                    best_adv, r_linf = fmn(model=model, inputs=X , labels=y, norm = 2.0, steps=5)
                     regularizer = cure.regularizer(X, y, delta='linf', h=args.h, X_adv=best_adv)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
-                    loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                    loss = loss + args.kapa*loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
                 elif args.delta == 'random':
                     regularizer = cure.regularizer(X, y, delta='random', h=args.h)
                     curvature += regularizer.item()
                     
-                    loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                    loss = loss + args.kapa*loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
 
                 elif args.delta == 'classic':
                     regularizer = cure.regularizer(X, y, delta='classic', h=args.h)
