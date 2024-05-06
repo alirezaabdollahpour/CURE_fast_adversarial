@@ -15,6 +15,7 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
 
 from models import *
+from resnet import *
 from utils import *
 from cure import *
 from attacks.fmn import *
@@ -48,6 +49,7 @@ def get_args():
     parser.add_argument('--epsilon', default=8, type=int)
     parser.add_argument('--alpha', default=10, type=float, help='Step size')
     parser.add_argument('--opt', default='SGD', type=str, choices=['SGD','Adam'], help='optimizer')
+    parser.add_argument('--hat', type=str_to_bool, default=True, help='Using HAT loss (0 or 1)')
     parser.add_argument('--delta', default='linf', type=str, choices=['linf', 'random', 'classic', 'FGSM', 'None'] ,help='passing to CURE for FGSM direction rather thatn z')
     parser.add_argument('--delta-init', default='random', choices=['zero', 'random', 'previous'],
         help='Perturbation initialization method')
@@ -81,7 +83,8 @@ def main():
     pgd_alpha = (2 / 255.) / std
 
     # model = PreActResNet18().cuda()
-    model = WideResNet().cuda()
+    model = resnet(name='resnet18', num_classes=10).cuda()
+    # model = WideResNet().cuda()
     model.train()
 
     if args.opt == 'SGD':
@@ -180,11 +183,14 @@ def main():
             # Forward pass with amp
             with torch.cuda.amp.autocast():
                 ############ HAT #################
-                X_adv_hat = X + delta[:X.size(0)]
-                X_hr = X + 2 * (X_adv_hat - X)
-                y_hr = model(X_hr).argmax(dim=1)
-                out_help = model(X_hr)
-                loss_help = F.cross_entropy(out_help, y_hr, reduction='mean')
+                if args.hat == True:
+                    X_adv_hat = X + delta[:X.size(0)]
+                    X_hr = X + 2 * (X_adv_hat - X)
+                    y_hr = model(X_hr).argmax(dim=1)
+                    out_help = model(X_hr)
+                    loss_help = F.cross_entropy(out_help, y_hr, reduction='mean')
+                else:
+                    loss_help = 0.00
                 ##################################
                 
                 output = model(X + delta[:X.size(0)]) # gradient for theta to train with SGD or Adam
@@ -222,7 +228,8 @@ def main():
                     regularizer = cure.regularizer(X, y, delta='FGSM', h=args.h, X_adv=X +delta[:X.size(0)])
                     curvature += regularizer.item()
                     
-                    loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                    # loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                    loss = loss + regularizer
                     
                 elif args.delta == 'None':
                     loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help

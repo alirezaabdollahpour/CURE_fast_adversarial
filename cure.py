@@ -15,6 +15,13 @@ class CURE():
         self.input = None
         self.input_adv = None
     
+    def train(self):
+        self.net.train()  # Set the model to train mode
+    
+    def eval(self):
+        self.net.eval()  # Set the model to eval mode
+
+    
     def get_uniform_delta(self, input, eps, requires_grad=True):
         delta = torch.zeros(input.shape).cuda()
         delta.uniform_(-eps, eps)
@@ -31,13 +38,20 @@ class CURE():
         elif delta_init == 'fmn':
             delta = self.input_adv - self.input
             delta.requires_grad_(True)
+        
+        else:
+            raise ValueError("Invalid value for delta_init. Expected 'fmn', got: {}".format(delta_init))
             
+            
+                        
         with torch.cuda.amp.autocast():
+            self.net.eval()
             output = self.net(X + delta)
             loss = self.criterion(output, y)
             grad = torch.autograd.grad(loss, delta, create_graph=True if backprop else False)[0]
         if not backprop:
             grad, delta = grad.detach(), delta.detach()
+            
         return grad
 
     def _find_z(self, inputs, targets, h):
@@ -122,8 +136,8 @@ class CURE():
 
         elif delta == 'FGSM' and X_adv != None:
             
-            g_2 = self.get_input_grad(self.net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
-            g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
+            g_2 = self.get_input_grad(self.net.eval(), inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
+            g_3 = self.get_input_grad(self.net.eval(), X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
 
             reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
             # reg = ((g_3-g_2)).mean(dim=0).sum()

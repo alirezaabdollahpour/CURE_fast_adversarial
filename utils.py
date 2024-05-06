@@ -9,6 +9,7 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 
 from autoattack import AutoAttack
+# from robustbench.utils import load_model
 
 
 
@@ -113,6 +114,10 @@ std = torch.tensor(cifar10_std).view(3,1,1).cuda()
 upper_limit = ((1 - mu)/ std)
 lower_limit = ((0 - mu)/ std)
 
+
+def str_to_bool(v):
+    """Convert string to bool."""
+    return bool(int(v))
 
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
@@ -308,6 +313,7 @@ def evaluate_pgd_test_Alireza(test_loader, model, attack_iters, restarts, epsilo
 
 
 
-# def HAT():
+# def interpolation(model):
+#     model_teacher = load_model(model_name='Carmon2019Unlabeled', dataset='cifar10', threat_model='Linf')
     
 #     pass

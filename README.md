@@ -25,5 +25,5 @@ python main.py --delta 'classic' --lr-schedule 'piecewise' --lr-max 0.1 --lr-min
 ```
 ## Run this command for "short-phase" training without "CO (catastrophic overfitting)" with classical CURE :
 ```
-python main.py --delta 'linf' --lr-schedule 'cyclic' --lr-max 0.2 --lr-min 0.0 --opt 'SGD' --lambda 4 --h 3 --epochs 30 --batch-size 128
+python main.py --delta 'FGSM' --lr-schedule 'cyclic' --lr-max 0.3 --lr-min 0.0 --opt 'SGD' --lambda 700  --h 3 --epochs 30 --batch-size 128 --betta 0.00 --gamma 0.00 --kapa 0.00 --hat 0
 ```
