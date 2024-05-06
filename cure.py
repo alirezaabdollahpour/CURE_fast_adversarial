@@ -130,5 +130,5 @@ class CURE():
             
 
             
-            return slef.lambda_*reg
+            return self.lambda_*reg
 
