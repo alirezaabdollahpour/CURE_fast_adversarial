@@ -12,6 +12,8 @@ class CURE():
         self.opt = opt
         self.eps = 8./255.
         self.lambda_ = lambda_
+        self.input = None
+        self.input_adv = None
     
     def get_uniform_delta(self, input, eps, requires_grad=True):
         delta = torch.zeros(input.shape).cuda()
@@ -22,9 +24,14 @@ class CURE():
     def get_input_grad(self, net, X, y, opt, eps, delta_init='none', backprop=False):
         if delta_init == 'none':
             delta = torch.zeros_like(X, requires_grad=True)
+            # delta = X
         elif delta_init == 'random_uniform':
             delta = self.get_uniform_delta(X.shape, eps, requires_grad=True)
-
+        
+        elif delta_init == 'fmn':
+            delta = self.input_adv - self.input
+            delta.requires_grad_(True)
+            
         with torch.cuda.amp.autocast():
             output = self.net(X + delta)
             loss = self.criterion(output, y)
@@ -60,6 +67,8 @@ class CURE():
         '''
         Regularizer term in CURE
         '''
+        self.input = inputs
+        self.input_adv = X_adv
         if delta == 'classic':
             z, norm_grad = self._find_z(inputs, targets, h)
             inputs.requires_grad_(True)
@@ -104,11 +113,11 @@ class CURE():
         elif delta == 'linf' and X_adv != None:
             
             g_2 = self.get_input_grad(self.net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
-            g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
+            g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='fmn', backprop=True)
 
             reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
 
-            return reg/float(inputs.size(0))
+            return self.lambda_*reg
         
 
         elif delta == 'FGSM' and X_adv != None:
