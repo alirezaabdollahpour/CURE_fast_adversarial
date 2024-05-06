@@ -85,7 +85,7 @@ class CURE():
             # reg = (1./h**2)*(reg**2)
             # reg = (reg**2)
             self.net.zero_grad()
-            return self.lambda_*torch.sum(reg)/float(inputs.size(0))
+            return self.lambda_*torch.sum(reg)
         
         elif delta == 'random':
             
@@ -108,7 +108,7 @@ class CURE():
             self.net.zero_grad()
 
             # return torch.sum(reg) / float(inputs.size(0))
-            return reg/float(inputs.size(0))
+            return self.lambda_*torch.sum(reg)
 
         elif delta == 'linf' and X_adv != None:
             
@@ -130,5 +130,5 @@ class CURE():
             
 
             
-            return torch.sum(reg)/float(inputs.size(0))
+            return slef.lambda_*reg
 

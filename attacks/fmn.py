@@ -76,7 +76,7 @@ def linf_mid_points(x0: Tensor, x1: Tensor, ε: Tensor) -> Tensor:
 def fmn(model: nn.Module,
         inputs: Tensor,
         labels: Tensor,
-        norm = 2.0,
+        norm = float('inf'),
         targeted: bool = False,
         steps: int = 3,
         α_init: float = 1.0,
