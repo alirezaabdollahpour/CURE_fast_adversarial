@@ -176,6 +176,7 @@ def get_loaders(dir_, batch_size):
 
 
 def attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
+    # print(f'epsilon is :{epsilon}')
     scaler = torch.cuda.amp.GradScaler()
     max_loss = torch.zeros(y.shape[0]).cuda()
     max_delta = torch.zeros_like(X).cuda()
@@ -314,14 +315,14 @@ def evaluate_robust_accuracy_AA_Complete(model, data_loader, device, epsilon):
 
 def evaluate_pgd_test_Alireza(test_loader, model, attack_iters, restarts, epsilon):
     epsilon = (epsilon / 255.) / std
-    alpha = (2 / 255.) / std
+    alpha = (1.25*epsilon) / std
     pgd_loss = 0
     pgd_acc = 0
     n = 0
     model.eval()
     for i, (X, y) in enumerate(test_loader):
         X, y = X.cuda(), y.cuda()
-        pgd_delta = attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts)
+        pgd_delta = attack_pgd(model, X, y, epsilon, alpha, attack_iters=attack_iters, restarts=restarts)
         with torch.no_grad():
             output = model(X + pgd_delta)
             loss = F.cross_entropy(output, y)

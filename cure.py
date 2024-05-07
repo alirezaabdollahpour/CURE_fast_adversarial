@@ -145,6 +145,9 @@ class CURE():
             
             reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
             
+            g_2_norm = (g_2*g_2).mean(dim=0).sum()
+            
                         
-            return self.lambda_*reg
+            return self.lambda_*reg, self.lambda_*g_2_norm
+            # return reg
 

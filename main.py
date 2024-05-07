@@ -150,7 +150,7 @@ def main():
         scheduler = optim.lr_scheduler.StepLR(opt, step_size=10**6, gamma=1)
 
     regularizer_epochs = range(0, args.epochs+1,1)
-    interpolation_epochs = range(0, args.epochs+1,1)
+    # interpolation_epochs = range(0, args.epochs+1,1)
     # Training
     prev_robust_acc = 0.
     start_train_time = time.time()
@@ -165,6 +165,7 @@ def main():
         test_acc = 0
         train_n = 0
         curvature = 0.0
+        gradient_norm = 0.0
         for i, (X, y) in tqdm(enumerate(train_loader)):
             X, y = X.cuda(), y.cuda()
             
@@ -209,11 +210,17 @@ def main():
                     loss_help = 0.00
                 ##################################
                 
+                
                 output = model(X + delta[:X.size(0)]) # gradient for theta to train with SGD or Adam
                 loss = criterion(output, y)
-                loss_robust = criterion_kl(F.log_softmax(output, dim=1),F.softmax(model(X), dim=1))
-                logit_clean = model(X)
-                loss_clean = criterion(logit_clean, y)
+                
+                if args.betta != 0.00:
+                    loss_robust = criterion_kl(F.log_softmax(output, dim=1),F.softmax(model(X), dim=1))
+                    logit_clean = model(X)
+                    loss_clean = criterion(logit_clean, y)
+                else:
+                    loss_robust = 0.00
+                    loss_clean = 0.00
                      
                 
             ########### CURE + TRADE ########################################
@@ -243,15 +250,20 @@ def main():
                     loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
 
                 elif args.delta == 'FGSM':
-                    regularizer = cure.regularizer(X, y, delta='FGSM', h=args.h, X_adv=X +delta[:X.size(0)])
+                    regularizer, norm_grad = cure.regularizer(X, y, delta='FGSM', h=args.h, X_adv=X +delta[:X.size(0)])
                     curvature += regularizer.item()
-                    print(f'curvature is :{curvature}')
+                    gradient_norm += norm_grad.item()
+                    # print("*"*80)
+                    # print(f'curvature is :{curvature}')
+                    # print("*"*80)
+                    # print(f'gradient norm is:{gradient_norm}')
+                    # print("*"*80)
                     if curvature > 0.01000000000000:
                         print("Curvature exploding!")
                         print("*"*80)
-                        regularizer = regularizer*70
+                        # regularizer = args.lambda_*regularizer*500
                     
-                    loss = loss + args.kapa*loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                    loss = loss + args.kapa*loss_clean + 10*regularizer + 5*gradient_norm + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
                     # loss = loss + regularizer
                     
                 elif args.delta == 'None':
@@ -268,7 +280,7 @@ def main():
 
             train_loss += loss.item() * y.size(0)
             train_acc += (output.max(1)[1] == y).sum().item()
-            train_acc_clean += (logit_clean.max(1)[1] == y).sum().item()
+            # train_acc_clean += (logit_clean.max(1)[1] == y).sum().item()
             train_n += y.size(0)
             
             if args.lr_schedule == 'cyclic':
@@ -300,19 +312,21 @@ def main():
         ############## Print Information ##########################################
         print(f'curvature for epoch:{epoch} is :{curvature}')
         print("="*60)
+        print(f'gradient norm for epoch:{epoch} is :{gradient_norm}')
+        print("="*60)
         print(f'Train Accuracy for epoch:{epoch} is :{(train_acc/train_n)*100}%')
         print("="*60)
-        print(f'Train Accuracy on clean samples for epoch:{epoch} is :{(train_acc_clean/train_n)*100}%')
-        print("="*60)
+        # print(f'Train Accuracy on clean samples for epoch:{epoch} is :{(train_acc_clean/train_n)*100}%')
+        # print("="*60)
         epoch_time = time.time()
         print('Total epoch time: %.4f minutes', (epoch_time - start_epoch_time)/60)
         ###########################################################################
-        accuracy_df = accuracy_df._append({'epoch': epoch, 'loss_train': train_loss/train_n ,'ACC_train':(train_acc/train_n)*100,'ACC_Clean_train':(train_acc_clean/train_n)*100,'ACC_test':test_acc*100}, ignore_index=True)
+        # accuracy_df = accuracy_df._append({'epoch': epoch, 'loss_train': train_loss/train_n ,'ACC_train':(train_acc/train_n)*100,'ACC_Clean_train':(train_acc_clean/train_n)*100,'ACC_test':test_acc*100}, ignore_index=True)
 
         # lr = scheduler.get_lr()[0]
 
     # Save the DataFrame to a CSV file
-    accuracy_df.to_csv(results_csv, index=False)
+    # accuracy_df.to_csv(results_csv, index=False)
     train_time = time.time()
     if not args.early_stop:
         best_state_dict = model.state_dict()
