@@ -1,3 +1,6 @@
+
+
+
 import argparse
 import copy
 import logging
@@ -18,10 +21,13 @@ from models import *
 from resnet import *
 from utils import *
 from cure import *
+# from linearize import *
 from attacks.fmn import *
 
 import warnings
 warnings.filterwarnings('ignore')
+
+
 
 
 
@@ -50,6 +56,7 @@ def get_args():
     parser.add_argument('--alpha', default=10, type=float, help='Step size')
     parser.add_argument('--opt', default='SGD', type=str, choices=['SGD','Adam'], help='optimizer')
     parser.add_argument('--hat', type=str_to_bool, default=True, help='Using HAT loss (0 or 1)')
+    parser.add_argument('--interpol', type=str_to_bool, default=True, help='Using interpolation model (0 or 1)')
     parser.add_argument('--delta', default='linf', type=str, choices=['linf', 'random', 'classic', 'FGSM', 'None'] ,help='passing to CURE for FGSM direction rather thatn z')
     parser.add_argument('--delta-init', default='random', choices=['zero', 'random', 'previous'],
         help='Perturbation initialization method')
@@ -82,10 +89,16 @@ def main():
     alpha = (args.alpha / 255.) / std
     pgd_alpha = (2 / 255.) / std
 
-    # model = PreActResNet18().cuda()
-    model = resnet(name='resnet18', num_classes=10).cuda()
-    # model = WideResNet().cuda()
+    model = PreActResNet18().cuda()
+    # model = DMPreActResNet()
+    # model = LinearizedModel(model, init_model=model)
+    model = model.cuda()
+    # model = resnet(name='resnet18', num_classes=10).cuda()
+    # model = resnet()
+    # Teacher = resnet(name='resnet18', num_classes=10)
     model.train()
+    
+    
 
     if args.opt == 'SGD':
         opt = torch.optim.SGD(model.parameters(), lr=args.lr_max, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -137,6 +150,7 @@ def main():
         scheduler = optim.lr_scheduler.StepLR(opt, step_size=10**6, gamma=1)
 
     regularizer_epochs = range(0, args.epochs+1,1)
+    interpolation_epochs = range(0, args.epochs+1,1)
     # Training
     prev_robust_acc = 0.
     start_train_time = time.time()
@@ -174,6 +188,8 @@ def main():
 
 
             scaler.scale(loss).backward()
+            # scaler.update()
+
 
             grad = delta.grad.detach()
             delta.data = clamp(delta + alpha * torch.sign(grad), -epsilon, epsilon) # FGSM
@@ -208,6 +224,8 @@ def main():
 
                 if args.delta == 'linf':
                     best_adv, r_linf = fmn(model=model, inputs=X , labels=y, norm = 2.0, steps=5)
+                    r_linf = clamp(r_linf, -epsilon, epsilon)
+                    best_adv = X+r_linf 
                     regularizer = cure.regularizer(X, y, delta='linf', h=args.h, X_adv=best_adv)
                     curvature += regularizer.item()
                     # Total loss : loss + TRADE_loss + CURE_regulizer
@@ -227,9 +245,14 @@ def main():
                 elif args.delta == 'FGSM':
                     regularizer = cure.regularizer(X, y, delta='FGSM', h=args.h, X_adv=X +delta[:X.size(0)])
                     curvature += regularizer.item()
+                    print(f'curvature is :{curvature}')
+                    if curvature > 0.01000000000000:
+                        print("Curvature exploding!")
+                        print("*"*80)
+                        regularizer = regularizer*70
                     
-                    # loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
-                    loss = loss + regularizer
+                    loss = loss + args.kapa*loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                    # loss = loss + regularizer
                     
                 elif args.delta == 'None':
                     loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
@@ -238,7 +261,6 @@ def main():
                 loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
                 
                 
-
             opt.zero_grad()           
             scaler.scale(loss).backward()
             scaler.step(opt)
@@ -250,7 +272,7 @@ def main():
             train_n += y.size(0)
             
             if args.lr_schedule == 'cyclic':
-                scheduler.step()  
+                scheduler.step()
             elif args.lr_schedule == 'multistep':
                 scheduler.step()
 
@@ -297,8 +319,9 @@ def main():
     torch.save(best_state_dict, os.path.join(args.out_dir, 'model.pth'))
 
     # Evaluation
-    # model_test = PreActResNet18().cuda()
-    model_test = WideResNet().cuda()
+    model_test = PreActResNet18().cuda()
+    # model_test = WideResNet().cuda()
+    # model_test = resnet(name='resnet18', num_classes=10).cuda()
     model_test.load_state_dict(best_state_dict)
     model_test.float()
     model_test.eval()
@@ -312,12 +335,12 @@ def main():
     print('='*60)
     print(f'pgd_loss is :{pgd_loss} and pgd_acc(robust acc) is :{pgd_acc*100}')
     print('='*60)
-    ACC_AA_PGD = evaluate_robust_accuracy_AA_APGD(model_test, testloader, 'cuda', epsilon=8/255)
-    test_loss, test_acc = evaluate_standard(testloader, model_test)
-    print(f'Robust accuray for AA-PGD is :{ACC_AA_PGD}')
-    print('='*60)
-    print(f'test_loss is :{test_loss} and clean_acc is:{test_acc*100}')
-
+    # ACC_AA_PGD = evaluate_robust_accuracy_AA_APGD(model_test, testloader, 'cuda', epsilon=8/255)
+    # test_loss, test_acc = evaluate_standard(testloader, model_test)
+    # print(f'Robust accuray for AA-PGD is :{ACC_AA_PGD}')
+    # print('='*60)
+    # print(f'test_loss is :{test_loss} and clean_acc is:{test_acc*100}')
+    
 
 
 

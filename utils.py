@@ -1,3 +1,4 @@
+
 import time
 import shutil
 import sys
@@ -8,8 +9,10 @@ from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 
-from autoattack import AutoAttack
-# from robustbench.utils import load_model
+# from autoattack import AutoAttack
+# from robustbench.robustbench.utils import load_model
+# import robustbench
+
 
 
 
@@ -108,11 +111,27 @@ def format_time(seconds):
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2471, 0.2435, 0.2616)
 
+CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
+CIFAR10_STD = (0.2471, 0.2435, 0.2616)
+# CIFAR100_MEAN = (0.5071, 0.4865, 0.4409)
+# CIFAR100_STD = (0.2673, 0.2564, 0.2762)
+
 mu = torch.tensor(cifar10_mean).view(3,1,1).cuda()
 std = torch.tensor(cifar10_std).view(3,1,1).cuda()
 
 upper_limit = ((1 - mu)/ std)
 lower_limit = ((0 - mu)/ std)
+
+
+class Normalize:
+    def __init__(self, mu, std):
+        self.mu = mu
+        self.std = std
+
+    def __call__(self, data):
+        return (data - self.mu) / self.std
+
+
 
 
 def str_to_bool(v):
@@ -267,7 +286,7 @@ def evaluate_robust_accuracy_AA_Complete(model, data_loader, device, epsilon):
     # Put the model in evaluation mode
     model.eval()
 
-    epsilon = epsilon/255.
+    epsilon = (epsilon / 255.) / std
     adversary = AutoAttack(model, norm='Linf', eps=epsilon, version='standard')
 
     robust_accuracy = 0.0
@@ -313,7 +332,41 @@ def evaluate_pgd_test_Alireza(test_loader, model, attack_iters, restarts, epsilo
 
 
 
-# def interpolation(model):
-#     model_teacher = load_model(model_name='Carmon2019Unlabeled', dataset='cifar10', threat_model='Linf')
+def interpolate_models(model1, model2, alpha=0.5):
+    print("start interpolation")
+    """
+    Interpolates between the state_dicts of two models based on a coefficient, loads
+    the result into the second model, and returns it.
+
+    Parameters:
+        model1 (torch.nn.Module): First model whose state_dict is used as the base.
+        model2 (torch.nn.Module): Second model where the interpolated state_dict is loaded.
+        alpha (float): Interpolation coefficient.
+
+    Returns:
+        torch.nn.Module: The second model with the interpolated state_dict loaded.
+    """
+    # Extract the state_dicts from both models
+    sd1 = model1.state_dict()
+    sd2 = model2.state_dict()
     
-#     pass
+    # Check if models are compatible
+    if sd1.keys() != sd2.keys():
+        raise ValueError("Models have different architectures and cannot be interpolated")
+    
+    # Create a new state_dict to store the interpolated parameters
+    interpolated_sd = {}
+    
+    # Interpolate each parameter
+    with torch.cuda.amp.autocast():
+        for key in sd1:
+            if sd1[key].size() != sd2[key].size():
+                raise ValueError("Parameter sizes do not match for the models.")
+            # Perform the interpolation
+            interpolated_sd[key] = (1 - alpha) * sd1[key] + alpha * sd2[key]
+    
+    # Load the interpolated state_dict into model2
+    model1.load_state_dict(interpolated_sd)
+    
+    # model1 = model1.train()
+    return model1

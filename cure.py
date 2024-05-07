@@ -2,6 +2,8 @@ from utils import *
 import torch
 import torch.nn as nn
 
+
+
 class CURE():
     
     def __init__(self, net, opt, lambda_):
@@ -45,7 +47,7 @@ class CURE():
             
                         
         with torch.cuda.amp.autocast():
-            self.net.eval()
+            # self.net.eval()
             output = self.net(X + delta)
             loss = self.criterion(output, y)
             grad = torch.autograd.grad(loss, delta, create_graph=True if backprop else False)[0]
@@ -136,13 +138,13 @@ class CURE():
 
         elif delta == 'FGSM' and X_adv != None:
             
+
             g_2 = self.get_input_grad(self.net.eval(), inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
-            g_3 = self.get_input_grad(self.net.eval(), X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
-
+            g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
+            
+            
             reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
-            # reg = ((g_3-g_2)).mean(dim=0).sum()
             
-
-            
+                        
             return self.lambda_*reg
 

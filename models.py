@@ -33,10 +33,10 @@ class PreActBlock(nn.Module):
             )
 
     def forward(self, x):
-        out = swish(self.bn1(x))
+        out = F.relu(self.bn1(x))
         shortcut = self.shortcut(x) if hasattr(self, 'shortcut') else x
         out = self.conv1(out)
-        out = self.conv2(swish(self.bn2(out)))
+        out = self.conv2(F.relu(self.bn2(out)))
         out += shortcut
         return out
 
@@ -60,11 +60,11 @@ class PreActBottleneck(nn.Module):
             )
 
     def forward(self, x):
-        out = swish(self.bn1(x))
+        out = F.relu(self.bn1(x))
         shortcut = self.shortcut(out) if hasattr(self, 'shortcut') else x
         out = self.conv1(out)
-        out = self.conv2(swish(self.bn2(out)))
-        out = self.conv3(swish(self.bn3(out)))
+        out = self.conv2(F.relu(self.bn2(out)))
+        out = self.conv3(F.relu(self.bn3(out)))
         out += shortcut
         return out
 
@@ -95,7 +95,7 @@ class PreActResNet(nn.Module):
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
-        out = swish(self.bn(out))
+        out = F.relu(self.bn(out))
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
         out = self.linear(out)
@@ -168,7 +168,7 @@ class NetworkBlock(nn.Module):
 
 
 class WideResNet(nn.Module):
-    def __init__(self, depth=28, num_classes=10, widen_factor=1, dropRate=0.1):
+    def __init__(self, depth=28, num_classes=1, widen_factor=1, dropRate=0.1):
         super(WideResNet, self).__init__()
         nChannels = [16, 16 * widen_factor, 32 * widen_factor, 64 * widen_factor]
         assert ((depth - 4) % 6 == 0)
