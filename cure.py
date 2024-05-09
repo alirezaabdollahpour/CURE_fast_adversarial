@@ -128,7 +128,7 @@ class CURE():
 
         elif delta == 'linf' and X_adv != None:
             
-            g_2 = self.get_input_grad(self.net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
+            g_2 = self.get_input_grad(self.net.eval(), inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
             g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='fmn', backprop=True)
 
             reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
@@ -140,14 +140,16 @@ class CURE():
             
 
             g_2 = self.get_input_grad(self.net.eval(), inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
-            g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
+            g_3 = self.get_input_grad(self.net.eval(), X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
             
             
             reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
             
             g_2_norm = (g_2*g_2).mean(dim=0).sum()
+            g_3_norm = (g_3*g_3).mean(dim=0).sum()
             
+            grad_norm = g_2_norm + g_3_norm
                         
-            return self.lambda_*reg, self.lambda_*g_2_norm
+            return self.lambda_*reg, self.lambda_*grad_norm
             # return reg
 

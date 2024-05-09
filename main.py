@@ -78,7 +78,7 @@ def main():
     state = {k: v for k, v in args._get_kwargs()}
     print(state)
 
-    results_csv = f'train_FGSM_h_{args.h}_betta_{args.betta}_lambda_{args.lambda_}_epochs_{args.epochs}_lr_{args.lr_max}_lr_schedule_{args.lr_schedule}_{args.delta}_loss_clean.csv'
+    results_csv = f'train_FGSM_h_{args.h}_betta_{args.betta}_lambda_{args.lambda_}_epochs_{args.epochs}_lr_{args.lr_max}_lr_schedule_{args.lr_schedule}_{args.delta}_loss_clean_g2_direction.csv'
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
@@ -203,9 +203,9 @@ def main():
                 if args.hat == True:
                     X_adv_hat = X + delta[:X.size(0)]
                     X_hr = X + 2 * (X_adv_hat - X)
-                    y_hr = model(X_hr).argmax(dim=1)
+                    y_hr = model(X + delta[:X.size(0)]).argmax(dim=1)
                     out_help = model(X_hr)
-                    loss_help = F.cross_entropy(out_help, y_hr, reduction='mean')
+                    loss_help = F.cross_entropy(out_help, y_hr)
                 else:
                     loss_help = 0.00
                 ##################################
@@ -213,6 +213,7 @@ def main():
                 
                 output = model(X + delta[:X.size(0)]) # gradient for theta to train with SGD or Adam
                 loss = criterion(output, y)
+                logit_clean = model(X)
                 
                 if args.betta != 0.00:
                     loss_robust = criterion_kl(F.log_softmax(output, dim=1),F.softmax(model(X), dim=1))
@@ -263,7 +264,7 @@ def main():
                         print("*"*80)
                         # regularizer = args.lambda_*regularizer*500
                     
-                    loss = loss + args.kapa*loss_clean + 10*regularizer + 5*gradient_norm + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                    loss = loss + (1/args.batch_size)*args.kapa*loss_clean + 100*regularizer + 10*gradient_norm + (1/args.batch_size)*args.betta*loss_robust+(1/args.batch_size)*args.gamma*loss_help
                     # loss = loss + regularizer
                     
                 elif args.delta == 'None':
@@ -280,7 +281,7 @@ def main():
 
             train_loss += loss.item() * y.size(0)
             train_acc += (output.max(1)[1] == y).sum().item()
-            # train_acc_clean += (logit_clean.max(1)[1] == y).sum().item()
+            train_acc_clean += (logit_clean.max(1)[1] == y).sum().item()
             train_n += y.size(0)
             
             if args.lr_schedule == 'cyclic':
@@ -316,17 +317,17 @@ def main():
         print("="*60)
         print(f'Train Accuracy for epoch:{epoch} is :{(train_acc/train_n)*100}%')
         print("="*60)
-        # print(f'Train Accuracy on clean samples for epoch:{epoch} is :{(train_acc_clean/train_n)*100}%')
-        # print("="*60)
+        print(f'Train Accuracy on clean samples for epoch:{epoch} is :{(train_acc_clean/train_n)*100}%')
+        print("="*60)
         epoch_time = time.time()
         print('Total epoch time: %.4f minutes', (epoch_time - start_epoch_time)/60)
         ###########################################################################
-        # accuracy_df = accuracy_df._append({'epoch': epoch, 'loss_train': train_loss/train_n ,'ACC_train':(train_acc/train_n)*100,'ACC_Clean_train':(train_acc_clean/train_n)*100,'ACC_test':test_acc*100}, ignore_index=True)
+        accuracy_df = accuracy_df._append({'epoch': epoch, 'loss_train': train_loss/train_n ,'ACC_train':(train_acc/train_n)*100,'ACC_Clean_train':(train_acc_clean/train_n)*100,'ACC_test':test_acc*100}, ignore_index=True)
 
         # lr = scheduler.get_lr()[0]
 
     # Save the DataFrame to a CSV file
-    # accuracy_df.to_csv(results_csv, index=False)
+    accuracy_df.to_csv(results_csv, index=False)
     train_time = time.time()
     if not args.early_stop:
         best_state_dict = model.state_dict()
