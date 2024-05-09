@@ -9,99 +9,15 @@ from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
 
-# from autoattack import AutoAttack
+from autoattack import AutoAttack
 # from robustbench.robustbench.utils import load_model
 # import robustbench
 
 
 
 
-
-
-
-TOTAL_BAR_LENGTH = 65.
-last_time = time.time()
-begin_time = last_time
-term_width, _ = shutil.get_terminal_size()
-term_width = int(term_width)
-
-def progress_bar(current, total, msg=None):
-    global last_time, begin_time
-    if current == 0:
-        begin_time = time.time()  # Reset for new bar.
-
-    cur_len = int(TOTAL_BAR_LENGTH*current/total)
-    rest_len = int(TOTAL_BAR_LENGTH - cur_len) - 1
-
-    sys.stdout.write(' [')
-    for i in range(cur_len):
-        sys.stdout.write('=')
-    sys.stdout.write('>')
-    for i in range(rest_len):
-        sys.stdout.write('.')
-    sys.stdout.write(']')
-
-    cur_time = time.time()
-    step_time = cur_time - last_time
-    last_time = cur_time
-    tot_time = cur_time - begin_time
-
-    L = []
-    L.append('  Step: %s' % format_time(step_time))
-    L.append(' | Tot: %s' % format_time(tot_time))
-    if msg:
-        L.append(' | ' + msg)
-
-    msg = ''.join(L)
-    sys.stdout.write(msg)
-    for i in range(term_width-int(TOTAL_BAR_LENGTH)-len(msg)-3):
-        sys.stdout.write(' ')
-
-    # Go back to the center of the bar.
-    for i in range(term_width-int(TOTAL_BAR_LENGTH/2)+2):
-        sys.stdout.write('\b')
-    sys.stdout.write(' %d/%d ' % (current+1, total))
-
-    if current < total-1:
-        sys.stdout.write('\r')
-    else:
-        sys.stdout.write('\n')
-    sys.stdout.flush()
-
-
-
-
-def format_time(seconds):
-    days = int(seconds / 3600/24)
-    seconds = seconds - days*3600*24
-    hours = int(seconds / 3600)
-    seconds = seconds - hours*3600
-    minutes = int(seconds / 60)
-    seconds = seconds - minutes*60
-    secondsf = int(seconds)
-    seconds = seconds - secondsf
-    millis = int(seconds*1000)
-
-    f = ''
-    i = 1
-    if days > 0:
-        f += str(days) + 'D'
-        i += 1
-    if hours > 0 and i <= 2:
-        f += str(hours) + 'h'
-        i += 1
-    if minutes > 0 and i <= 2:
-        f += str(minutes) + 'm'
-        i += 1
-    if secondsf > 0 and i <= 2:
-        f += str(secondsf) + 's'
-        i += 1
-    if millis > 0 and i <= 2:
-        f += str(millis) + 'ms'
-        i += 1
-    if f == '':
-        f = '0ms'
-    return f
+def normalize(X):
+    return (X - mu)/std
 
 
 
@@ -253,25 +169,26 @@ def evaluate_standard(test_loader, model):
 
 
 
-def evaluate_robust_accuracy_AA_APGD(model, data_loader, device, epsilon):
+
+
+def evaluate_robust_accuracy_AA_Complete(model, data_loader, device, epsilon):
+    
     # Put the model in evaluation mode
     model.eval()
 
-    adversary = AutoAttack(model, norm='Linf', eps=epsilon, version='custom', attacks_to_run=['apgd-ce'])
-    adversary.apgd.n_restarts = 1
+    # epsilon = epsilon / 255.
+    adversary = AutoAttack(model, norm='Linf', eps=0.031, version='standard',verbose=False)
 
     robust_accuracy = 0.0
     total = 0
 
     for inputs, labels in data_loader:
         inputs, labels = inputs.to(device), labels.to(device)
-
+        
         # Run the attack
-        inputs_adv = adversary.run_standard_evaluation(inputs, labels, bs=inputs.size(0))
-
-        # Evaluate on adversarial examples
+        inputs_adv = adversary.run_standard_evaluation(normalize(inputs), labels)
         with torch.no_grad():
-            outputs = model(inputs_adv)
+            outputs = model(normalize(normalize(torch.clamp(inputs_adv, min=lower_limit, max=upper_limit))))
             _, predicted = torch.max(outputs, 1)
             robust_accuracy += (predicted == labels).sum().item()
         total += labels.size(0)
@@ -282,54 +199,7 @@ def evaluate_robust_accuracy_AA_APGD(model, data_loader, device, epsilon):
     return robust_accuracy
 
 
-def evaluate_robust_accuracy_AA_Complete(model, data_loader, device, epsilon):
-    scaler = torch.cuda.amp.GradScaler()
-    # Put the model in evaluation mode
-    model.eval()
 
-    epsilon = (epsilon / 255.) / std
-    adversary = AutoAttack(model, norm='Linf', eps=epsilon, version='standard')
-
-    robust_accuracy = 0.0
-    total = 0
-
-    for inputs, labels in data_loader:
-        inputs, labels = inputs.to(device), labels.to(device)
-
-        # Run the attack
-        inputs_adv = adversary.run_standard_evaluation(inputs, labels, bs=inputs.size(0))
-
-        # Evaluate on adversarial examples
-        with torch.cuda.amp.autocast():
-            with torch.no_grad():
-                outputs = model(inputs_adv)
-                _, predicted = torch.max(outputs, 1)
-                robust_accuracy += (predicted == labels).sum().item()
-        total += labels.size(0)
-
-    # Calculate final robust accuracy
-    robust_accuracy = robust_accuracy / total
-    # print(f'Robust accuracy under attack: {robust_accuracy * 100:.2f}%')
-    return robust_accuracy
-
-
-def evaluate_pgd_test_Alireza(test_loader, model, attack_iters, restarts, epsilon):
-    epsilon = (epsilon / 255.) / std
-    alpha = (1.25*epsilon) / std
-    pgd_loss = 0
-    pgd_acc = 0
-    n = 0
-    model.eval()
-    for i, (X, y) in enumerate(test_loader):
-        X, y = X.cuda(), y.cuda()
-        pgd_delta = attack_pgd(model, X, y, epsilon, alpha, attack_iters=attack_iters, restarts=restarts)
-        with torch.no_grad():
-            output = model(X + pgd_delta)
-            loss = F.cross_entropy(output, y)
-            pgd_loss += loss.item() * y.size(0)
-            pgd_acc += (output.max(1)[1] == y).sum().item()
-            n += y.size(0)
-    return pgd_loss/n, pgd_acc/n
 
 
 
