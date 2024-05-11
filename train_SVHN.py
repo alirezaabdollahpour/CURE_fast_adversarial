@@ -211,12 +211,12 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    train_loader, test_loader, train_dataset, test_dataset = get_loaders_CIFAR100(args.data_dir, args.batch_size)
+    train_loader, test_loader, train_dataset, test_dataset = get_loaders_SVHN(args.data_dir, args.batch_size)
 
     epsilon = (args.epsilon / 255.)
     pgd_alpha = (args.pgd_alpha / 255.)
 
-    model = PreActResNet18(num_classes=100).cuda()
+    model = PreActResNet18(num_classes=10).cuda()
     # model = DMPreActResNet()
     # model = LinearizedModel(model, init_model=model)
     # model = model.cuda()
