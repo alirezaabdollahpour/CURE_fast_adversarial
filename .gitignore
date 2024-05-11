@@ -2,7 +2,6 @@ train_fgsm_output/
 cifar-data/
 __pycache__/
 *.ipynb
-test.py
 *.xlsx
 *.csv
 train_NTK.py
