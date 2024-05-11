@@ -156,7 +156,7 @@ def attack_pgd_Alireza(model, X, y, epsilon, alpha, attack_iters, restarts, norm
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch-size', default=256, type=int)
+    parser.add_argument('--batch-size', default=128, type=int)
     parser.add_argument('--data-dir', default='CIFAR100-data', type=str)
     parser.add_argument('--epsilon', default=8, type=int)
     parser.add_argument('--alpha', default=2, type=float, help='Step size')
@@ -176,7 +176,7 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    train_loader, test_loader, train_dataset, test_dataset = get_loaders(args.data_dir, args.batch_size)
+    train_loader, test_loader, train_dataset, test_dataset = get_loaders_CIFAR100(args.data_dir, args.batch_size)
 
     # epsilon = (args.epsilon / 255.) / std
     # alpha = (args.alpha / 255.) / std
@@ -185,7 +185,7 @@ def main():
     # Evaluation
     model_test = PreActResNet18(num_classes=100)
     
-    model_test.load_state_dict(torch.load('train_fgsm_output/model_best_PRN18_lamda_900_epsilon_16_g3_direction_1_10_alpha_4.pth'))
+    model_test.load_state_dict(torch.load('CIFAR100_Models/model_best_3_3.pth'))
     # model_test = WideResNet().cuda()
     # model_test = resnet(name='resnet18', num_classes=10).cuda()
 
@@ -196,7 +196,7 @@ def main():
 
     metrics = pd.DataFrame(columns=['epsilon','ACC_PGD','ACC_AA'])
     # Select 1024 random indices from the test set
-    indices = torch.randperm(len(test_dataset))[:1024]
+    indices = torch.randperm(len(test_dataset))[:9999]
     # Create the subset
     test_subset = Subset(test_dataset, indices)
     testloader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
@@ -237,9 +237,9 @@ def main():
             print("="*80)
             print(f'Test Accuracy on clean samples is :{(test_acc/test_n)*100}%')
             print("="*80)   
-            print('='*50)
-            print(f'pgd_loss for epsilon={epsilon} is :{pgd_loss} and pgd_acc(robust acc) for epsilon={epsilon} is :{pgd_acc*100}')
-            print('='*50)
+            # print('='*50)
+            # print(f'pgd_loss for epsilon={epsilon} is  pgd_acc(robust acc) for epsilon={epsilon} is :{pgd_acc*100}')
+            # print('='*50)
             # ACC_AA = evaluate_robust_accuracy_AA_Complete(model_test, testloader, 'cuda', epsilon=epsilon)     
             # print(f'Robust accuray for AA at epsilon={epsilon} is :{ACC_AA}')
             # print('='*50)
