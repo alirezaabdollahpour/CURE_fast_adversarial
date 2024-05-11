@@ -28,34 +28,29 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
-cifar100_mean = (0.5070751592371323, 0.48654887331495095, 0.4409178433670343)
-cifar100_std = (0.2673342858792401, 0.2564384629170883, 0.27615047132568404)
+svhn_mean = (0.5, 0.5, 0.5)
+svhn_std = (0.5, 0.5, 0.5)
 
-mu = torch.tensor(cifar100_mean).view(3,1,1).cuda()
-std = torch.tensor(cifar100_std).view(3,1,1).cuda()
+mu_SVHN = torch.tensor(svhn_mean).view(3,1,1).cuda()
+std_SVHN = torch.tensor(svhn_std).view(3,1,1).cuda()
 
 upper_limit, lower_limit = 1, 0
 
-
-def normalize(X):
-    return (X - mu)/std
-
-def get_loaders_CIFAR100(dir_, batch_size):
+def get_loaders_SVHN(dir_, batch_size):
     
     train_transform = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(15),
         transforms.ToTensor(),
+        # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
     test_transform = transforms.Compose([
         transforms.ToTensor(),
+        # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
     num_workers = 2
-    train_dataset = datasets.CIFAR100(
-        dir_, train=True, transform=train_transform, download=True)
-    test_dataset = datasets.CIFAR100(
-        dir_, train=False, transform=test_transform, download=True)
+    train_dataset = datasets.SVHN(
+        dir_, split='train', transform=train_transform, download=True)
+    test_dataset = datasets.SVHN(
+        dir_, split='test', transform=test_transform, download=True)
     train_loader = torch.utils.data.DataLoader(
         dataset=train_dataset,
         batch_size=batch_size,
@@ -72,6 +67,10 @@ def get_loaders_CIFAR100(dir_, batch_size):
     )
     
     return train_loader, test_loader, train_dataset, test_dataset
+
+
+def normalize(X):
+    return (X - mu_SVHN)/std_SVHN
 
 
 
@@ -189,7 +188,7 @@ def evaluate_robust_accuracy_AA_Complete_CIFAR100(model, data_loader, device, ep
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=128, type=int)
-    parser.add_argument('--data-dir', default='CIFAR100-data', type=str)
+    parser.add_argument('--data-dir', default='SVHN-data', type=str)
     parser.add_argument('--epsilon', default=8, type=int)
     parser.add_argument('--alpha', default=2, type=float, help='Step size')
     parser.add_argument('--seed', default=0, type=int, help='Random seed')
@@ -208,16 +207,16 @@ def main():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    train_loader, test_loader, train_dataset, test_dataset = get_loaders_CIFAR100(args.data_dir, args.batch_size)
+    train_loader, test_loader, train_dataset, test_dataset = get_loaders_SVHN(args.data_dir, args.batch_size)
 
     # epsilon = (args.epsilon / 255.) / std
     # alpha = (args.alpha / 255.) / std
     # pgd_alpha = (2 / 255.) / std
     
     # Evaluation
-    model_test = PreActResNet18(num_classes=100)
+    model_test = PreActResNet18(num_classes=10)
     
-    model_test.load_state_dict(torch.load('CIFAR100_Models/model_best_7.pth'))
+    model_test.load_state_dict(torch.load('SVHN_Models/model_best_7.pth'))
     # model_test = WideResNet().cuda()
     # model_test = resnet(name='resnet18', num_classes=10).cuda()
 
