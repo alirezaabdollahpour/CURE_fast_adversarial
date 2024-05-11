@@ -23,7 +23,6 @@ def normalize(X):
 
 
 
-
 cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2471, 0.2435, 0.2616)
 
@@ -89,6 +88,10 @@ def get_loaders(dir_, batch_size):
         num_workers=2,
     )
     return train_loader, test_loader, train_dataset, test_dataset
+
+
+
+
 
 
 def attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
@@ -177,11 +180,11 @@ def evaluate_robust_accuracy_AA_Complete(model, data_loader, device, epsilon):
     model.eval()
 
     # epsilon = epsilon / 255.
-    adversary = AutoAttack(model, norm='Linf', eps=0.031, version='standard',verbose=False)
+    adversary = AutoAttack(model, norm='Linf', eps=16./255., version='standard',verbose=True)
 
     robust_accuracy = 0.0
     total = 0
-
+    test_n = 0.
     for inputs, labels in data_loader:
         inputs, labels = inputs.to(device), labels.to(device)
         
@@ -191,6 +194,10 @@ def evaluate_robust_accuracy_AA_Complete(model, data_loader, device, epsilon):
             outputs = model(normalize(normalize(torch.clamp(inputs_adv, min=lower_limit, max=upper_limit))))
             _, predicted = torch.max(outputs, 1)
             robust_accuracy += (predicted == labels).sum().item()
+            test_n += labels.size(0) 
+            print("*"*80)
+            print(f'Robust Accurcy for AA  is :{(robust_accuracy/test_n)*100}%')
+            print("*"*80)
         total += labels.size(0)
 
     # Calculate final robust accuracy
