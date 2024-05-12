@@ -16,3 +16,6 @@ CIFAR100_Models
 CIFAR100-data
 SVHN_Models
 SVHN-data
+setup.py
+setup
+test_CIFAR10-C.py

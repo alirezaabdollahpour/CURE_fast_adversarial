@@ -157,7 +157,7 @@ def attack_pgd_Alireza(model, X, y, epsilon, alpha, attack_iters, restarts, norm
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=256, type=int)
-    parser.add_argument('--h', default=3.0, type=float, help='hyperparameter for CURE regulizer')
+    parser.add_argument('--h', default=0.00, type=float, help='hyperparameter for CURE regulizer')
     parser.add_argument('--lambda_', default=10, type=float, help='weight for CURE regulizer')
     parser.add_argument('--gamma', default=0.00, type=float, help='weight for HAT loss')
     parser.add_argument('--betta', default=0.00, type=float, help='weight for TRADE loss')
