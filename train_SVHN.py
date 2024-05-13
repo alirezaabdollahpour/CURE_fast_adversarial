@@ -158,14 +158,14 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=256, type=int)
     parser.add_argument('--h', default=0.00, type=float, help='hyperparameter for CURE regulizer')
-    parser.add_argument('--lambda_', default=10, type=float, help='weight for CURE regulizer')
+    parser.add_argument('--lambda_', default=900, type=float, help='weight for CURE regulizer')
     parser.add_argument('--gamma', default=0.00, type=float, help='weight for HAT loss')
     parser.add_argument('--betta', default=0.00, type=float, help='weight for TRADE loss')
     parser.add_argument('--kapa', default=0.00, type=float, help='weight for clean loss')
     parser.add_argument('--data-dir', default='SVHN-data', type=str)
     parser.add_argument('--epochs', default=15, type=int)
     parser.add_argument('--attack', default='zerograd', type=str, choices=['zerograd', 'fgsm', 'pgd'])
-    parser.add_argument('--lr-min', default=0.0, type=float)
+    parser.add_argument('--lr-min', default=0.00, type=float)
     parser.add_argument('--lr-max', default=0.05, type=float)
     parser.add_argument('--lr-schedule', default='cyclic', choices=['superconverge', 'piecewise', 'linear', 'piecewisesmoothed', 'piecewisezoom', 'onedrop', 'multipledecay', 'cosine','cyclic', 'fix', 'multistep', 'StepLR'])
     parser.add_argument('--lr-one-drop', default=0.01, type=float)
@@ -215,6 +215,11 @@ def main():
 
     epsilon = (args.epsilon / 255.)
     pgd_alpha = (args.pgd_alpha / 255.)
+    # For SVHN, we increase the perturbation radius from 0 to epsilon for first 5 epochs
+    epsilon_global = epsilon
+    alpha_global = args.fgsm_alpha
+    n_warmup_epochs = 5
+    n_warmup_iterations = n_warmup_epochs * len(train_loader)
 
     model = PreActResNet18(num_classes=10).cuda()
     # model = DMPreActResNet()
@@ -232,6 +237,7 @@ def main():
     elif args.opt == 'Adam':
         opt = torch.optim.Adam(model.parameters(), lr=args.lr_max, weight_decay=args.weight_decay)
 
+    lr_steps = args.epochs * len(train_loader)
     # Necessary for FP16
     scaler = torch.cuda.amp.GradScaler()
     amp_args = dict(opt_level=args.opt_level, loss_scale=args.loss_scale, verbosity=True)
@@ -268,9 +274,13 @@ def main():
         def lr_schedule(t): 
             return args.lr_max * 0.5 * (1 + np.cos(t / args.epochs * np.pi))   
     elif args.lr_schedule == 'cyclic':
-        scheduler = lambda t: np.interp([t], [0, args.epochs // 2, args.epochs], [0, args.lr_max, 0])[0]
+        # scheduler = lambda t: np.interp([t], [0, args.epochs // 2, args.epochs], [0, args.lr_max, 0])[0]
+        ########### for SVHN #######################################
+        scheduler = torch.optim.lr_scheduler.CyclicLR(opt, base_lr=args.lr_min, max_lr=args.lr_max, step_size_up=lr_steps * 2 / 5, step_size_down=lr_steps * 3 / 5)
+        
     elif args.lr_schedule == 'multistep':
         scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[args.lr_max, args.lr_min], gamma=0.001)
+
     
     elif args.lr_schedule == 'StepLR':
         scheduler = optim.lr_scheduler.StepLR(opt, step_size=10**6, gamma=1)
@@ -284,6 +294,8 @@ def main():
     best_test_robust_acc = 0.
     start_train_time = time.time()
     accuracy_df = pd.DataFrame(columns=['epoch','loss_train_FGSM','loss_train_clean','ACC_train','ACC_Clean_train','ACC_test_clean','Acc_test_PGD','Curvature','grad_norm','test_loss_clean'])
+    
+    iter_count = 0
     for epoch in range(args.epochs):
         print("Start training")
         start_epoch_time = time.time()
@@ -297,14 +309,10 @@ def main():
         curvature = 0.0
         gradient_norm = 0.0
         for i, (X, y) in tqdm(enumerate(train_loader)):
+            epsilon = epsilon_global * min(iter_count / n_warmup_iterations, 1)
+            alpha = alpha_global * min(iter_count / n_warmup_iterations, 1)
             X, y = X.cuda(), y.cuda()
             
-            # if args.lr_schedule != 'cyclic' and args.lr_schedule != 'fix' and args.lr_schedule != 'multistep' and args.lr_schedule != 'StepLR':
-                
-            lr = scheduler(epoch + (i + 1) / len(train_loader))
-            # print(f'learning rate for epoch:{epoch} is :{lr}')
-            # print("*"*80)
-            opt.param_groups[0].update(lr=lr)
             
             if i == 0:
                 first_batch = (X, y)
@@ -313,7 +321,7 @@ def main():
                 delta = attack_pgd_Alireza(model, X, y, epsilon, args.fgsm_alpha * epsilon, 1, 1, 'l_inf',fgsm_init=args.delta_init) 
 
             elif args.attack == 'zerograd':
-                delta, full_delta = zero_grad(model, X, y, epsilon, args.fgsm_alpha * epsilon, args.zero_qval, args.zero_iters, args.delta_init)
+                delta, full_delta = zero_grad(model, X, y, epsilon, alpha, args.zero_qval, args.zero_iters, args.delta_init)
 
             with torch.cuda.amp.autocast():
                 output = model(normalize(torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)))
@@ -387,9 +395,9 @@ def main():
                     #     print("*"*80)
                         # regularizer = args.lambda_*regularizer*500
                     
-                    loss = loss + regularizer + gradient_norm
+                    #loss = loss 
                     
-                    # loss = loss + regularizer
+                    loss = loss + 1*regularizer + 10*gradient_norm
                     
                 elif args.delta == 'None':
                     loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
@@ -402,6 +410,7 @@ def main():
                 scaler.scale(loss).backward()
                 # loss.backward()
                 scaler.step(opt)
+                iter_count += 1
                 # opt.step()
                 
                 scaler.update()
@@ -413,14 +422,10 @@ def main():
             train_n += y.size(0)
             
             # if args.lr_schedule == 'cyclic':
-            #     scheduler.step()
-            if args.lr_schedule == 'multistep':
-                scheduler.step()
+            scheduler.step()
 
-            elif args.lr_schedule == 'StepLR':
-                scheduler.step()
         
-                
+        lr = scheduler.get_last_lr()[0]        
             
         # if args.early_stop:
             # Check current PGD robustness of model using random minibatch

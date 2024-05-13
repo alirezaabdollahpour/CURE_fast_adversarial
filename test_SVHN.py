@@ -216,7 +216,7 @@ def main():
     # Evaluation
     model_test = PreActResNet18(num_classes=10)
     
-    model_test.load_state_dict(torch.load('SVHN_Models/model_best_7.pth'))
+    model_test.load_state_dict(torch.load('SVHN_Models/model_best.pth'))
     # model_test = WideResNet().cuda()
     # model_test = resnet(name='resnet18', num_classes=10).cuda()
 
@@ -227,7 +227,7 @@ def main():
 
     metrics = pd.DataFrame(columns=['epsilon','ACC_PGD','ACC_AA'])
     # Select 1024 random indices from the test set
-    indices = torch.randperm(len(test_dataset))[:9999]
+    indices = torch.randperm(len(test_dataset))[:1024]
     # Create the subset
     test_subset = Subset(test_dataset, indices)
     testloader = DataLoader(test_subset, batch_size=args.batch_size, shuffle=False)
