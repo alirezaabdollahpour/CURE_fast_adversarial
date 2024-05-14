@@ -2,7 +2,7 @@
 import time
 import shutil
 import sys
-
+import os
 import torch
 import torch.nn.functional as F
 from torchvision import datasets, transforms
@@ -248,3 +248,42 @@ def interpolate_models(model1, model2, alpha=0.5):
     
     # model1 = model1.train()
     return model1
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+def plot_deltas_density(delta, full_delta, epoch, save_dir='Plots'):
+    """
+    Plot density of the masked delta and full delta values and save the plot as a PNG file.
+
+    Args:
+    delta (torch.Tensor): The masked delta values.
+    full_delta (torch.Tensor): The full delta values.
+    epoch (int): The current epoch number.
+    save_dir (str): The directory to save the plot.
+    """
+    
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir, exist_ok=True) 
+    # Flatten the tensors
+    delta_flat = delta.flatten().cpu().numpy()
+    full_delta_flat = full_delta.flatten().cpu().numpy()
+    
+    # Create density plots
+    plt.figure(figsize=(10, 6))
+    sns.kdeplot(delta_flat, shade=True, color="blue", label="Masked Delta")
+    sns.kdeplot(full_delta_flat, shade=True, color="red", label="Full Delta")
+    
+    # Labels and title
+    plt.xlabel('Delta Values')
+    plt.ylabel('Density')
+    plt.title(f'Density Plot of Masked Delta vs. Full Delta - Epoch {epoch}')
+    plt.legend()
+    
+    # Show plot
+    plt.grid(True)
+
+    # Save the plot as a PNG file
+    filename = os.path.join(save_dir, f"delta_plot_epoch_{epoch}.png")
+    plt.savefig(filename)
+    plt.close()

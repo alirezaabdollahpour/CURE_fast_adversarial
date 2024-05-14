@@ -13,16 +13,16 @@ from torch.optim.lr_scheduler import StepLR
 import torch.nn.functional as F
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Subset
-
+from tqdm import tqdm, trange
 # from autoattack import AutoAttack
 # from models import *
 # from resnet import *
-from utils import str_to_bool, clamp
+from utils import str_to_bool, clamp, plot_deltas_density
 from torchvision import datasets, transforms
 from cure import *
 from preactresnet import *
 # from linearize import *
-# from attacks.fmn import *
+from attacks.fmn import *
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -73,6 +73,10 @@ def normalize(X):
     return (X - mu_SVHN)/std_SVHN
 
 
+
+def adaptive_q_val(epoch, max_epoch, start=0.3, end=0.7):
+    # Linearly increase q_val from `start` to `end` over training epochs
+    return start + (end - start) * (epoch / max_epoch)
 
 def zero_grad(model, X, y, epsilon, alpha, q_val, q_iters, fgsm_init):
     delta = torch.zeros_like(X)
@@ -154,6 +158,30 @@ def attack_pgd_Alireza(model, X, y, epsilon, alpha, attack_iters, restarts, norm
     return max_delta
 
 
+def setup_logging(args):
+    # Create the output directory if it does not exist
+    if not os.path.exists(args.out_dir):
+        os.makedirs(args.out_dir)
+    
+    # Set up the log file name to include key parameters for easy identification
+    log_filename = os.path.join(args.out_dir, f"training_log_{args.batch_size}_{args.lr_max}_{args.epochs}.log")
+    
+    # Configure logging
+    logging.basicConfig(filename=log_filename, 
+                        filemode='a', # Append to the log file if it exists
+                        format='%(asctime)s - %(levelname)s - %(message)s', 
+                        datefmt='%Y-%m-%d %H:%M:%S',
+                        level=logging.INFO)
+
+    # Add console handler as well to print to stdout
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    logging.getLogger('').addHandler(console_handler)
+
+    return logging.getLogger(__name__)
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=256, type=int)
@@ -165,8 +193,8 @@ def get_args():
     parser.add_argument('--data-dir', default='SVHN-data', type=str)
     parser.add_argument('--epochs', default=15, type=int)
     parser.add_argument('--attack', default='zerograd', type=str, choices=['zerograd', 'fgsm', 'pgd'])
-    parser.add_argument('--lr-min', default=0.00, type=float)
-    parser.add_argument('--lr-max', default=0.05, type=float)
+    parser.add_argument('--lr-min', default=0.0, type=float)
+    parser.add_argument('--lr-max', default=0.01, type=float)
     parser.add_argument('--lr-schedule', default='cyclic', choices=['superconverge', 'piecewise', 'linear', 'piecewisesmoothed', 'piecewisezoom', 'onedrop', 'multipledecay', 'cosine','cyclic', 'fix', 'multistep', 'StepLR'])
     parser.add_argument('--lr-one-drop', default=0.01, type=float)
     parser.add_argument('--lr-drop-epoch', default=100, type=int)
@@ -184,7 +212,7 @@ def get_args():
     parser.add_argument('--delta-init', default='random', choices=['zero', 'random', 'previous'],
         help='Perturbation initialization method')
     parser.add_argument('--out-dir', default='SVHN_Models', type=str, help='Output directory')
-    parser.add_argument('--seed', default=0, type=int, help='Random seed')
+    parser.add_argument('--seed', default=42, type=int, help='Random seed')
     parser.add_argument('--early-stop', default=True, action='store_true', help='Early stop if overfitting occurs')
     parser.add_argument('--opt-level', default='O2', type=str, choices=['O0', 'O1', 'O2'],
         help='O0 is FP32 training, O1 is Mixed Precision, and O2 is "Almost FP16" Mixed Precision')
@@ -203,6 +231,7 @@ def get_args():
 def main():
     args = get_args()
     gc.collect()
+    torch.cuda.empty_cache()
     state = {k: v for k, v in args._get_kwargs()}
     print(state)
 
@@ -216,10 +245,10 @@ def main():
     epsilon = (args.epsilon / 255.)
     pgd_alpha = (args.pgd_alpha / 255.)
     # For SVHN, we increase the perturbation radius from 0 to epsilon for first 5 epochs
-    epsilon_global = epsilon
-    alpha_global = args.fgsm_alpha
-    n_warmup_epochs = 5
-    n_warmup_iterations = n_warmup_epochs * len(train_loader)
+    # epsilon_global = epsilon
+    # alpha_global = args.fgsm_alpha
+    # n_warmup_epochs = 3
+    # n_warmup_iterations = n_warmup_epochs * len(train_loader)
 
     model = PreActResNet18(num_classes=10).cuda()
     # model = DMPreActResNet()
@@ -260,7 +289,7 @@ def main():
             else:
                 return args.lr_max / 100.
     elif args.lr_schedule == 'linear':
-        lr_schedule = lambda t: np.interp([t], [0, args.epochs // 3, args.epochs * 2 // 3, args.epochs], [args.lr_max, args.lr_max, args.lr_max / 10, args.lr_max / 100])[0]
+        scheduler = lambda t: np.interp([t], [0, args.epochs // 3, args.epochs * 2 // 3, args.epochs], [args.lr_max, args.lr_max, args.lr_max / 10, args.lr_max / 100])[0]
     elif args.lr_schedule == 'onedrop':
         def lr_schedule(t):
             if t < args.lr_drop_epoch:
@@ -274,9 +303,9 @@ def main():
         def lr_schedule(t): 
             return args.lr_max * 0.5 * (1 + np.cos(t / args.epochs * np.pi))   
     elif args.lr_schedule == 'cyclic':
-        # scheduler = lambda t: np.interp([t], [0, args.epochs // 2, args.epochs], [0, args.lr_max, 0])[0]
+        lr_schedule = lambda t: np.interp([t], [0, args.epochs * 2 // 5, args.epochs], [0, args.lr_max, 0])[0]
         ########### for SVHN #######################################
-        scheduler = torch.optim.lr_scheduler.CyclicLR(opt, base_lr=args.lr_min, max_lr=args.lr_max, step_size_up=lr_steps * 2 / 5, step_size_down=lr_steps * 3 / 5)
+        # scheduler = torch.optim.lr_scheduler.CyclicLR(opt, base_lr=args.lr_min, max_lr=args.lr_max, step_size_up=lr_steps * 2 / 5, step_size_down=lr_steps * 3 / 5)
         
     elif args.lr_schedule == 'multistep':
         scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[args.lr_max, args.lr_min], gamma=0.001)
@@ -308,10 +337,13 @@ def main():
         train_n = 0.0
         curvature = 0.0
         gradient_norm = 0.0
+        # pbar = tqdm(enumerate(train_loader))
         for i, (X, y) in tqdm(enumerate(train_loader)):
-            epsilon = epsilon_global * min(iter_count / n_warmup_iterations, 1)
-            alpha = alpha_global * min(iter_count / n_warmup_iterations, 1)
+            # epsilon = epsilon_global * min(iter_count / n_warmup_iterations, 1)
+            # alpha = alpha_global * min(iter_count / n_warmup_iterations, 1)
             X, y = X.cuda(), y.cuda()
+            lr = lr_schedule(epoch + (i + 1) / len(train_loader))
+            opt.param_groups[0].update(lr=lr)
             
             
             if i == 0:
@@ -321,7 +353,9 @@ def main():
                 delta = attack_pgd_Alireza(model, X, y, epsilon, args.fgsm_alpha * epsilon, 1, 1, 'l_inf',fgsm_init=args.delta_init) 
 
             elif args.attack == 'zerograd':
-                delta, full_delta = zero_grad(model, X, y, epsilon, alpha, args.zero_qval, args.zero_iters, args.delta_init)
+                ############## adaptive q-iter ##################
+                q_val = adaptive_q_val(epoch=epoch, max_epoch=args.epochs, start=args.zero_qval, end=0.7)
+                delta, full_delta = zero_grad(model, X, y, epsilon,  args.fgsm_alpha * epsilon, q_val, args.zero_iters, args.delta_init)
 
             with torch.cuda.amp.autocast():
                 output = model(normalize(torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)))
@@ -334,7 +368,7 @@ def main():
                 if args.hat == True:
                     X_adv_hat = X + delta[:X.size(0)]
                     X_hr = X + 2 * (X_adv_hat - X)
-                    y_hr = model(normalize(torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)))
+                    y_hr = model(normalize(torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit))).argmax(dim=1)
                     out_help = model(normalize(torch.clamp(X_hr, min=lower_limit, max=upper_limit)))
                     loss_help = F.cross_entropy(out_help, y_hr, reduction='mean')
                 else:
@@ -347,57 +381,43 @@ def main():
                     
                 if args.kapa != 0.00:
                     # loss_robust = criterion_kl(F.log_softmax(output, dim=1),F.softmax(model(X), dim=1))
-                    loss_robust = 0.00
-                    logit_clean = model(normalize(X))
+                    loss_robust = (1/len(X)) * criterion_kl(F.log_softmax(output, dim=1), F.softmax(logit_clean, dim=1))
+                    # loss_robust = 0.00
+                    # logit_clean = model(normalize(X))
                     loss_clean = criterion(logit_clean, y)
                 else:
                     loss_robust = torch.tensor([0.00]).cuda()
                     loss_clean = torch.tensor([0.00]).cuda()
                     # logit_clean = torch.tensor([0.00]).cuda()
                         
-                    
-                ########### CURE + TRADE ########################################
-                # if epoch in regularizer_epochs:
-                    ########### FMN_Linf for proper direction ##################
-                    
-                    # Total loss : loss + TRADE_loss + CURE_regulizer
+
 
                 if args.delta == 'linf':
-                    best_adv, r_linf = fmn(model=model, inputs=X , labels=y, norm = 2.0, steps=5)
-                    r_linf = clamp(r_linf, -epsilon, epsilon)
-                    best_adv = X+r_linf 
-                    regularizer = cure.regularizer(X, y, delta='linf', h=args.h, X_adv=best_adv)
+                    best_adv, r_linf = fmn(model=model, inputs=normalize(X) , labels=y, norm = 2.0, steps=3)
+                    regularizer, norm_grad = cure.regularizer(model, X, y, delta='linf', h=args.h, X_adv=normalize(torch.clamp(X + r_linf, min=lower_limit, max=upper_limit)))
                     curvature += regularizer.item()
-                    # Total loss : loss + TRADE_loss + CURE_regulizer
-                    loss = loss + args.kapa*loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
-                elif args.delta == 'random':
-                    regularizer = cure.regularizer(X, y, delta='random', h=args.h)
-                    curvature += regularizer.item()
+                    gradient_norm += norm_grad.item()
                     
-                    loss = loss + args.kapa*loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
-
-                elif args.delta == 'classic':
-                    regularizer = cure.regularizer(X, y, delta='classic', h=args.h)
-                    curvature += regularizer.item()
+                    # loss = loss + regularizer + gradient_norm
+                    loss = loss + regularizer + gradient_norm + args.gamma*loss_help
                     
-                    loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
+                    
+                    # loss = loss + loss_clean + regularizer + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
 
                 elif args.delta == 'FGSM':
-                    # regularizer, norm_grad = cure.regularizer(X, y, delta='FGSM', h=args.h, X_adv=normalize(torch.clamp(X + delta[:X.size(0)], min=lower_limit, max=upper_limit)))
+
+                    ############## full_delta ####################################################################################################
+                    regularizer, norm_grad = cure.regularizer(model, X, y,opt, delta='FGSM', h=args.h, X_adv=normalize(torch.clamp(X + full_delta[:X.size(0)], min=lower_limit, max=upper_limit)))
                     
-                    ############## Debug with full_delta ####################################################################################################
-                    regularizer, norm_grad = cure.regularizer(model, X, y, delta='FGSM', h=args.h, X_adv=normalize(torch.clamp(X + full_delta[:X.size(0)], min=lower_limit, max=upper_limit)))
+                    
                     curvature += regularizer.item()
                     gradient_norm += norm_grad.item()
 
-                    # if curvature > 0.01000000000000:
-                    #     print("Curvature exploding!")
-                    #     print("*"*80)
-                        # regularizer = args.lambda_*regularizer*500
-                    
-                    #loss = loss 
+
                     
                     loss = loss + 1*regularizer + 10*gradient_norm
+                    # loss = loss + regularizer + gradient_norm + args.gamma*loss_help + args.kapa*loss_robust
+                    # loss = loss
                     
                 elif args.delta == 'None':
                     loss = loss + loss_clean + (1/args.batch_size)*args.betta*loss_robust+args.gamma*loss_help
@@ -410,7 +430,7 @@ def main():
                 scaler.scale(loss).backward()
                 # loss.backward()
                 scaler.step(opt)
-                iter_count += 1
+                # iter_count += 1
                 # opt.step()
                 
                 scaler.update()
@@ -422,13 +442,13 @@ def main():
             train_n += y.size(0)
             
             # if args.lr_schedule == 'cyclic':
-            scheduler.step()
+            # scheduler.step()
 
         
-        lr = scheduler.get_last_lr()[0]        
+        # lr = scheduler.get_last_lr()[0]        
             
         # if args.early_stop:
-            # Check current PGD robustness of model using random minibatch
+        # Check current PGD robustness of model using random minibatch
         indices = torch.randperm(len(test_dataset))[:128]
         # Create the subset
         test_subset = Subset(test_dataset, indices)
@@ -439,6 +459,7 @@ def main():
         test_robust_loss = 0
         test_robust_acc = 0
         test_n = 0
+        
         for i, (X, y) in enumerate(test_loader):
             
             X, y = X.cuda(), y.cuda()
@@ -483,10 +504,15 @@ def main():
             print(f'Test loss on clean samples for epoch:{epoch} is :{(test_loss_clean/test_n)}')
             print("="*60)
             print(f'Test Accuracy on clean samples for epoch:{epoch} is :{(test_acc/test_n)*100}%')
+            print("="*60)
             epoch_time = time.time()
             print('Total epoch time: %.4f minutes', (epoch_time - start_epoch_time)/60)
+            print("="*60)
             #######################################################################################################
             accuracy_df = accuracy_df.append({'epoch': epoch, 'loss_train_FGSM': train_loss/train_n ,'loss_train_clean': train_loss_clean/train_n,'ACC_train':(train_acc/train_n)*100,'ACC_Clean_train':(train_acc_clean/train_n)*100,'ACC_test_clean':(test_acc/test_n)*100,'Acc_test_PGD':(test_robust_acc/test_n)*100,'Curvature':curvature, 'grad_norm':gradient_norm,'test_loss_clean':test_loss_clean/test_n}, ignore_index=True)
+
+            plot_deltas_density(delta=delta, full_delta=full_delta, epoch=epoch, save_dir='CURE/Plots')
+            
 
 
     # Save the DataFrame to a CSV file

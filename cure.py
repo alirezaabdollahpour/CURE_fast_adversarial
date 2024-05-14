@@ -11,7 +11,7 @@ class CURE():
         self.scaler = torch.cuda.amp.GradScaler()
         self.net = net
         self.criterion = nn.CrossEntropyLoss()
-        self.opt = opt
+        # self.opt = opt
         self.eps = 8./255.
         self.lambda_ = lambda_
         self.input = None
@@ -78,13 +78,14 @@ class CURE():
         return z, norm_grad
 
 
-    def regularizer(self,net, inputs,targets, delta, h, X_adv=None):
+    def regularizer(self,net, inputs,targets,opt, delta, h, X_adv=None):
 
         '''
         Regularizer term in CURE
         '''
         self.input = inputs
         self.input_adv = X_adv
+        self.opt = opt
         if delta == 'classic':
             z, norm_grad = self._find_z(inputs, targets, h)
             inputs.requires_grad_(True)
@@ -128,12 +129,18 @@ class CURE():
 
         elif delta == 'linf' and X_adv != None:
             
-            g_2 = self.get_input_grad(self.net.eval(), inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
-            g_3 = self.get_input_grad(self.net, X_adv, targets, self.opt, self.eps, delta_init='fmn', backprop=True)
-
+            g_2 = self.get_input_grad(net, inputs, targets, self.opt, self.eps, delta_init='none', backprop=False)
+            g_3 = self.get_input_grad(net, X_adv, targets, self.opt, self.eps, delta_init='none', backprop=True)
+            
+            
             reg = ((g_2-g_3)*(g_2-g_3)).mean(dim=0).sum()
-
-            return self.lambda_*reg
+            
+            g_2_norm = (g_2*g_2).mean(dim=0).sum()
+            g_3_norm = (g_3*g_3).mean(dim=0).sum()
+            
+            grad_norm = g_2_norm + g_3_norm
+                        
+            return self.lambda_*reg, self.lambda_*grad_norm
         
 
         elif delta == 'FGSM' and X_adv != None:
@@ -152,5 +159,6 @@ class CURE():
                         
             return self.lambda_*reg, self.lambda_*grad_norm
             # return self.lambda_*reg, self.lambda_*g_2_norm
+            # return self.lambda_*reg
             # return reg
 
